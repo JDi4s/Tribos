@@ -1,5 +1,5 @@
 (function () {
-    var SCRIPT_NS = 'nobres_final';
+    var SCRIPT_NS = 'nobres_final_clean';
     var DIALOG_ID = 'nobres_calculator_dialog';
 
     try { $(document).off('.' + SCRIPT_NS); } catch (e) {}
@@ -10,6 +10,7 @@
         constructor() {
             this.totalResources = { wood: 0, stone: 0, iron: 0 };
             this.incomingResources = { wood: 0, stone: 0, iron: 0 };
+            this.snob = { total: 0, saved: 0, missing: 0 };
         }
 
         async init() {
@@ -34,16 +35,17 @@
             return res;
         }
 
-        #parseNumber(t) {
-            return parseInt(String(t).replace(/[^\d]/g, ''), 10) || 0;
+        #parseNumber(text) {
+            return parseInt(String(text).replace(/[^\d]/g, ''), 10) || 0;
         }
 
         async loadData() {
             await this.getVillageResources();
             await this.getIncoming();
-            this.snob = await this.getSnob();
+            await this.getSnob();
         }
 
+        // 🔹 Recursos das aldeias
         async getVillageResources() {
             const html = this.#fetch(this.#generateUrl('overview_villages', 'prod'));
             const dom = $.parseHTML(html);
@@ -51,12 +53,14 @@
 
             rows.each((_, r) => {
                 const cell = $(r).find('td').eq(3);
+
                 this.totalResources.wood += this.#parseNumber(cell.find('.wood').text());
                 this.totalResources.stone += this.#parseNumber(cell.find('.stone').text());
                 this.totalResources.iron += this.#parseNumber(cell.find('.iron').text());
             });
         }
 
+        // 🔹 Incoming + envios internos
         async getIncoming() {
             const types = ['inc', 'own'];
 
@@ -67,22 +71,29 @@
 
                 rows.each((_, r) => {
                     const cell = $(r).find('td').last();
-                    this.incomingResources.wood += this.#parseNumber(cell.find('.wood').text());
-                    this.incomingResources.stone += this.#parseNumber(cell.find('.stone').text());
-                    this.incomingResources.iron += this.#parseNumber(cell.find('.iron').text());
+
+                    // 🔥 parsing correto para o teu mundo
+                    const res = cell.text().trim().split(/\s+/);
+
+                    const wood = this.#parseNumber(res[0]);
+                    const stone = this.#parseNumber(res[1]);
+                    const iron = this.#parseNumber(res[2]);
+
+                    this.incomingResources.wood += wood;
+                    this.incomingResources.stone += stone;
+                    this.incomingResources.iron += iron;
                 });
             }
         }
 
+        // 🔹 Academia (moedas automáticas)
         async getSnob() {
             const html = this.#fetch(this.#generateUrl('snob'));
             const text = String(html);
 
-            return {
-                total: parseInt((text.match(/Total:\s*(\d+)/) || [])[1]) || 0,
-                saved: parseInt((text.match(/Já poupado.*?(\d+)/) || [])[1]) || 0,
-                missing: parseInt((text.match(/faltam:\s*(\d+)/) || [])[1]) || 0
-            };
+            this.snob.total = parseInt((text.match(/Total:\s*(\d+)/) || [])[1]) || 0;
+            this.snob.saved = parseInt((text.match(/Já poupado.*?(\d+)/) || [])[1]) || 0;
+            this.snob.missing = parseInt((text.match(/faltam:\s*(\d+)/) || [])[1]) || 0;
         }
 
         calc() {
@@ -103,11 +114,15 @@
                 iron: snobCost.iron + coinCost.iron * missingCoins
             };
 
-            const can = Math.floor(Math.min(
-                total.wood / cost.wood,
-                total.stone / cost.stone,
-                total.iron / cost.iron
-            ));
+            let can = 0;
+
+            if (
+                total.wood >= cost.wood &&
+                total.stone >= cost.stone &&
+                total.iron >= cost.iron
+            ) {
+                can = 1;
+            }
 
             return { total, cost, can };
         }
@@ -116,13 +131,21 @@
             const c = this.calc();
 
             const html = `
-<div style="padding:15px;font-family:Arial;color:#fff">
-<h2>Nobres</h2>
+<div style="padding:20px;font-family:Arial;color:#2b1d12">
+
+<h2 style="margin-top:0">Calculadora de Nobres</h2>
+
+<hr>
 
 <b>Recursos totais</b><br>
 Madeira: ${this.f(c.total.wood)}<br>
 Barro: ${this.f(c.total.stone)}<br>
 Ferro: ${this.f(c.total.iron)}<br><br>
+
+<b>Recursos a chegar</b><br>
+Madeira: ${this.f(this.incomingResources.wood)}<br>
+Barro: ${this.f(this.incomingResources.stone)}<br>
+Ferro: ${this.f(this.incomingResources.iron)}<br><br>
 
 <b>Moedas</b><br>
 Total: ${this.snob.total}<br>
@@ -130,19 +153,24 @@ Poupadas: ${this.snob.saved}<br>
 Faltam: ${this.snob.missing}<br><br>
 
 <b>Resultado</b><br>
-Nobres possíveis: ${c.can}<br><br>
+Nobres possíveis: <b>${c.can}</b><br><br>
 
-<b>Custo próximo</b><br>
+<b>Custo do próximo nobre</b><br>
 Madeira: ${this.f(c.cost.wood)}<br>
 Barro: ${this.f(c.cost.stone)}<br>
 Ferro: ${this.f(c.cost.iron)}
+
 </div>
 
 <style>
-.popup_box_content{
-width:600px!important;
-max-height:80vh;
-overflow:auto;
+#popup_box_${DIALOG_ID} {
+    width: 600px !important;
+}
+
+#popup_box_${DIALOG_ID} .popup_box_content {
+    background: #f4e4bc !important;
+    max-height: 80vh;
+    overflow-y: auto;
 }
 </style>
 `;
