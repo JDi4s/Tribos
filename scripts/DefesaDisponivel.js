@@ -4,12 +4,14 @@ if (typeof DEBUG !== 'boolean') DEBUG = false;
 // Webhook do Discord
 var webhookURL = 'COLOCA_AQUI_O_TEU_WEBHOOK_DISCORD';
 
-// Script Config
+// DEBUG visual para confirmar que este script está mesmo a carregar
+alert('SCRIPT NOVO CARREGADO');
+
 var scriptConfig = {
     scriptData: {
         prefix: 'ownHomeTroopsCount',
         name: 'Own Home Troops Count',
-        version: 'v3 + scavenging fixed',
+        version: 'v4 + scavenging debug',
         author: 'RedAlert + edit',
         authorUrl: 'https://twscripts.dev/',
         helpLink: 'https://forum.tribalwars.net/index.php?threads/own-home-troops-count.286618/'
@@ -69,15 +71,6 @@ $.getScript(
                 border-image-width: 2;
                 box-shadow: 0 4px 8px rgba(0,0,0,0.2);
             }
-
-            #sendToDiscord.btn-twf img {
-                max-width: 36px;
-                max-height: 36px;
-                width: auto;
-                height: auto;
-                vertical-align: middle;
-                margin-right: 8px;
-            }
         `).appendTo('head');
 
         const scriptInfo = twSDK.scriptInfo();
@@ -99,54 +92,68 @@ $.getScript(
             } catch (error) {
                 UI.ErrorMessage('Ocorreu um erro inesperado!');
                 console.error(`${scriptInfo} Error:`, error);
+                alert('Erro ao correr o script. Abre a consola com F12.');
             }
         })();
 
         async function buildUI() {
-    const homeTroops = collectTroopsAtHome();
-    const totalTroopsAtHome = getTotalHomeTroops(homeTroops);
+            alert('buildUI correu');
 
-    const scavengingTroops = await getScavengingTroops();
-    const totalTroopsCombined = mergeTroops(totalTroopsAtHome, scavengingTroops);
+            const homeTroops = collectTroopsAtHome();
+            const totalTroopsAtHome = getTotalHomeTroops(homeTroops);
 
-    console.log("CASA:", totalTroopsAtHome);
-    console.log("BUSCAS:", scavengingTroops);
-    console.log("TOTAL:", totalTroopsCombined);
+            const scavengingTroops = await getScavengingTroops();
+            const totalTroopsCombined = mergeTroops(totalTroopsAtHome, scavengingTroops);
 
-    const bbCode = getTroopsBBCode(totalTroopsCombined);
-    const content = prepareContent(totalTroopsCombined, bbCode);
+            window.totalTroopsAtHomeDebug = totalTroopsAtHome;
+            window.scavengingTroopsDebug = scavengingTroops;
+            window.totalTroopsCombinedDebug = totalTroopsCombined;
 
-    twSDK.renderBoxWidget(
-        content,
-        scriptConfig.scriptData.prefix,
-        'ra-own-home-troops-count'
-    );
+            console.log('CASA:', totalTroopsAtHome);
+            console.log('BUSCAS:', scavengingTroops);
+            console.log('TOTAL:', totalTroopsCombined);
 
-    jQuery('#sendToDiscord').remove();
-    jQuery('.ra-own-home-troops-count').append(`
-        <button id="sendToDiscord" class="btn-twf">
-            Partilhar defesa disponível no ticket
-        </button>
-    `);
+            alert(
+                'CASA: ' + JSON.stringify(totalTroopsAtHome) + '\n' +
+                'BUSCAS: ' + JSON.stringify(scavengingTroops) + '\n' +
+                'TOTAL: ' + JSON.stringify(totalTroopsCombined)
+            );
 
-    jQuery('#sendToDiscord').on('click', () => {
-        sendDefensiveTroopsToDiscord(totalTroopsCombined);
-    });
+            const bbCode = getTroopsBBCode(totalTroopsCombined);
+            const content = prepareContent(totalTroopsCombined, bbCode);
 
-    setTimeout(() => {
-        if (!game_data.units.includes('archer')) {
-            jQuery('.archer-world').hide();
+            twSDK.renderBoxWidget(
+                content,
+                scriptConfig.scriptData.prefix,
+                'ra-own-home-troops-count'
+            );
+
+            jQuery('#sendToDiscord').remove();
+            jQuery('.ra-own-home-troops-count').append(`
+                <button id="sendToDiscord" class="btn-twf">
+                    Partilhar defesa disponível no ticket
+                </button>
+            `);
+
+            jQuery('#sendToDiscord').on('click', () => {
+                sendDefensiveTroopsToDiscord(totalTroopsCombined);
+            });
+
+            setTimeout(() => {
+                if (!game_data.units.includes('archer')) {
+                    jQuery('.archer-world').hide();
+                }
+
+                if (!game_data.units.includes('knight')) {
+                    jQuery('.paladin-world').hide();
+                }
+            }, 100);
         }
-
-        if (!game_data.units.includes('knight')) {
-            jQuery('.paladin-world').hide();
-        }
-    }, 100);
-}
 
         function sendDefensiveTroopsToDiscord(totalTroopsCombined) {
             const playerName = game_data.player.name;
-            const currentGroup = (jQuery('strong.group-menu-item').text() || 'todos').trim();
+            let currentGroup = (jQuery('strong.group-menu-item').text() || 'todos').trim();
+            currentGroup = currentGroup.replace(/^>/, '').replace(/<$/, '').trim();
 
             if (
                 typeof webhookURL !== 'string' ||
@@ -420,6 +427,7 @@ $.getScript(
                 const matches = html.match(/ScavengeMassScreen[\s\S]*?(,\n *\[.*?\}{0,3}\],\n)/);
 
                 if (!matches || matches.length <= 1) {
+                    console.log('Não foi encontrado bloco ScavengeMassScreen na página', currentPage);
                     break;
                 }
 
