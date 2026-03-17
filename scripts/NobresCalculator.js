@@ -1,5 +1,5 @@
 (function () {
-    const SCRIPT_NS = 'nobres_final_modern_v4';
+    const SCRIPT_NS = 'nobres_final_modern_v5';
     const DIALOG_ID = 'nobres_final_modern_dialog';
 
     try { $(document).off('.' + SCRIPT_NS); } catch (e) {}
@@ -65,12 +65,8 @@
             $.ajax({
                 url,
                 async: false,
-                success: function (data) {
-                    temp = data;
-                },
-                error: function () {
-                    temp = '';
-                }
+                success: function (data) { temp = data; },
+                error: function () { temp = ''; }
             });
             return temp;
         }
@@ -119,6 +115,7 @@
 
             rows.each((_, row) => {
                 const $row = $(row);
+
                 let wood = 0, stone = 0, iron = 0;
 
                 const resourceCell = $row.find('td').filter(function () {
@@ -150,48 +147,80 @@
             this.resources.villages = total;
         }
 
+        extractResourcesFromCell($cell) {
+            let wood = 0, stone = 0, iron = 0;
+
+            wood = this.parseNumber($cell.find('.wood').first().text());
+            stone = this.parseNumber($cell.find('.stone').first().text());
+            iron = this.parseNumber($cell.find('.iron').first().text());
+
+            if (!wood && !stone && !iron) {
+                const txt = $cell.text().replace(/\s+/g, ' ').trim();
+                const nums = txt.match(/\d[\d.\s]*/g) || [];
+                if (nums.length >= 3) {
+                    wood = this.parseNumber(nums[0]);
+                    stone = this.parseNumber(nums[1]);
+                    iron = this.parseNumber(nums[2]);
+                }
+            }
+
+            return { wood, stone, iron };
+        }
+
+        parseTraderRows(html) {
+            const dom = $.parseHTML(html);
+            const $dom = $(dom);
+            const total = { wood: 0, stone: 0, iron: 0 };
+
+            let rows = $dom.find('#trades_table tbody tr');
+            if (!rows.length) {
+                rows = $dom.find('table.vis tbody tr');
+            }
+
+            rows.each((_, row) => {
+                const $row = $(row);
+                const tds = $row.find('td');
+                if (!tds.length) return;
+
+                let best = { wood: 0, stone: 0, iron: 0 };
+                let found = false;
+
+                tds.each((__, td) => {
+                    const $td = $(td);
+                    const hasRes = $td.find('.wood, .stone, .iron').length > 0;
+                    if (!hasRes) return;
+
+                    const res = this.extractResourcesFromCell($td);
+                    if ((res.wood > 0 || res.stone > 0 || res.iron > 0) && !found) {
+                        best = res;
+                        found = true;
+                    }
+                });
+
+                if (!found) {
+                    const lastTd = tds.last();
+                    best = this.extractResourcesFromCell(lastTd);
+                }
+
+                const sane =
+                    best.wood >= 0 && best.wood < 100000000 &&
+                    best.stone >= 0 && best.stone < 100000000 &&
+                    best.iron >= 0 && best.iron < 100000000;
+
+                if (sane) {
+                    this.addRes(total, best);
+                }
+            });
+
+            return total;
+        }
+
         async getTransitResources() {
             const ownHtml = await this.fetchPage(this.buildUrl('overview_villages', 'trader', { type: 'own' }));
             const incHtml = await this.fetchPage(this.buildUrl('overview_villages', 'trader', { type: 'inc' }));
 
-            this.resources.ownTransit = this.parseTraderSummary(ownHtml, 'outgoing');
-            this.resources.externalIncoming = this.parseTraderSummary(incHtml, 'incoming');
-        }
-
-        parseTraderSummary(html, mode) {
-            const dom = $.parseHTML(html);
-            const $dom = $(dom);
-            const allText = $dom.text().replace(/\s+/g, ' ').trim();
-
-            let wood = 0, stone = 0, iron = 0;
-
-            if (mode === 'incoming') {
-                const m =
-                    allText.match(/A chegar:\s*.*?(\d[\d\.\s]*)\s+.*?(\d[\d\.\s]*)\s+.*?(\d[\d\.\s]*)\s+(?:De saída:|Os seus transportes|Transportes a chegar|$)/i);
-
-                if (m) {
-                    wood = this.parseNumber(m[1]);
-                    stone = this.parseNumber(m[2]);
-                    iron = this.parseNumber(m[3]);
-                }
-            }
-
-            if (mode === 'outgoing') {
-                const m =
-                    allText.match(/De saída:\s*.*?(\d[\d\.\s]*)\s+.*?(\d[\d\.\s]*)\s+.*?(\d[\d\.\s]*)\s+(?:Os seus transportes|Transportes a chegar|$)/i);
-
-                if (m) {
-                    wood = this.parseNumber(m[1]);
-                    stone = this.parseNumber(m[2]);
-                    iron = this.parseNumber(m[3]);
-                }
-            }
-
-            return {
-                wood: wood || 0,
-                stone: stone || 0,
-                iron: iron || 0
-            };
+            this.resources.ownTransit = this.parseTraderRows(ownHtml);
+            this.resources.externalIncoming = this.parseTraderRows(incHtml);
         }
 
         async getAcademyData() {
@@ -226,8 +255,8 @@
                 );
 
                 let groupName = 'Todos';
-
                 const groups = $(html).find('.vis_item').find('a,strong');
+
                 if ($(groups).length > 0) {
                     $.each(groups, function (_, group) {
                         if (String(group.getAttribute('data-group-id')) === String(game_data.group_id)) {
@@ -326,12 +355,6 @@
             const coinCost = this.getDiscountedCoinCost();
             const missingCoins = Math.max(0, 25 - savedCoins);
 
-            const nextNobleCost = {
-                wood: this.snobCost.wood + (coinCost.wood * missingCoins),
-                stone: this.snobCost.stone + (coinCost.stone * missingCoins),
-                iron: this.snobCost.iron + (coinCost.iron * missingCoins)
-            };
-
             const coinsPossible = this.calcCoinsFromResources(usableTotal, coinCost);
             const max = this.calcMaxNoblesFromResources(usableTotal, savedCoins, coinCost);
 
@@ -346,31 +369,23 @@
                 mintedCoins,
                 coinCost,
                 missingCoins,
-                nextNobleCost,
                 coinsPossible,
-                noblesPossible: max.nobles,
-                remaining: max.remaining
+                noblesPossible: max.nobles
             };
         }
 
         resourceRows(res) {
             return `
                 <div class="nc-line">
-                    <span class="nc-res-label">
-                        <img src="${this.icons.wood}" class="nc-res-icon"> Madeira
-                    </span>
+                    <span class="nc-res-label"><img src="${this.icons.wood}" class="nc-res-icon"> Madeira</span>
                     <b>${this.format(res.wood)}</b>
                 </div>
                 <div class="nc-line">
-                    <span class="nc-res-label">
-                        <img src="${this.icons.stone}" class="nc-res-icon"> Barro
-                    </span>
+                    <span class="nc-res-label"><img src="${this.icons.stone}" class="nc-res-icon"> Barro</span>
                     <b>${this.format(res.stone)}</b>
                 </div>
                 <div class="nc-line">
-                    <span class="nc-res-label">
-                        <img src="${this.icons.iron}" class="nc-res-icon"> Ferro
-                    </span>
+                    <span class="nc-res-label"><img src="${this.icons.iron}" class="nc-res-icon"> Ferro</span>
                     <b>${this.format(res.iron)}</b>
                 </div>
             `;
@@ -407,9 +422,7 @@
 
         <div class="nc-grid">
             <div class="nc-panel">
-                <div class="nc-panel-head">
-                    <h4>Recursos</h4>
-                </div>
+                <div class="nc-panel-head"><h4>Recursos</h4></div>
 
                 <div class="nc-mini-grid">
                     <div class="nc-stat-card">
@@ -434,12 +447,13 @@
                         Incluir recursos a chegar no cálculo
                     </label>
                 </div>
+
+                <div class="nc-panel-head nc-total-head"><h4>Total considerado no cálculo</h4></div>
+                <div class="nc-big-total" id="nc_usable_detail"></div>
             </div>
 
             <div class="nc-panel">
-                <div class="nc-panel-head">
-                    <h4>Academia e custos</h4>
-                </div>
+                <div class="nc-panel-head"><h4>Academia e custos</h4></div>
 
                 <div class="nc-form">
                     <div class="nc-field">
@@ -464,13 +478,6 @@
                     <div class="nc-line"><span class="nc-res-label"><img src="${this.icons.stone}" class="nc-res-icon"> Barro</span><b id="nc_coin_stone">-</b></div>
                     <div class="nc-line"><span class="nc-res-label"><img src="${this.icons.iron}" class="nc-res-icon"> Ferro</span><b id="nc_coin_iron">-</b></div>
                 </div>
-
-                <div class="nc-box">
-                    <div class="nc-box-title">Custo do próximo nobre</div>
-                    <div class="nc-line"><span class="nc-res-label"><img src="${this.icons.wood}" class="nc-res-icon"> Madeira</span><b id="nc_next_wood">-</b></div>
-                    <div class="nc-line"><span class="nc-res-label"><img src="${this.icons.stone}" class="nc-res-icon"> Barro</span><b id="nc_next_stone">-</b></div>
-                    <div class="nc-line"><span class="nc-res-label"><img src="${this.icons.iron}" class="nc-res-icon"> Ferro</span><b id="nc_next_iron">-</b></div>
-                </div>
             </div>
         </div>
 
@@ -488,22 +495,6 @@
             <div class="nc-result-card">
                 <div class="nc-result-label">Moedas em falta p/ próximo</div>
                 <div class="nc-result-value" id="nc_result_missing">-</div>
-            </div>
-        </div>
-
-        <div class="nc-grid nc-grid-bottom">
-            <div class="nc-panel">
-                <div class="nc-panel-head">
-                    <h4>Total usado no cálculo</h4>
-                </div>
-                <div id="nc_usable_detail"></div>
-            </div>
-
-            <div class="nc-panel">
-                <div class="nc-panel-head">
-                    <h4>Recursos sobrantes</h4>
-                </div>
-                <div id="nc_remaining_detail"></div>
             </div>
         </div>
 
@@ -641,14 +632,9 @@
 
 #nc-root .nc-grid {
     display: grid;
-    grid-template-columns: 1.1fr .95fr;
+    grid-template-columns: 1.15fr .85fr;
     gap: 16px;
     padding: 18px 22px;
-}
-
-#nc-root .nc-grid-bottom {
-    grid-template-columns: 1fr 1fr;
-    padding-top: 0;
 }
 
 #nc-root .nc-panel {
@@ -666,6 +652,10 @@
     margin-bottom: 12px;
 }
 
+#nc-root .nc-total-head {
+    margin-top: 16px;
+}
+
 #nc-root .nc-panel-head h4 {
     margin: 0;
     color: #fff1d5;
@@ -679,7 +669,8 @@
 }
 
 #nc-root .nc-stat-card,
-#nc-root .nc-box {
+#nc-root .nc-box,
+#nc-root .nc-big-total {
     background: linear-gradient(180deg, #3a2819 0%, #2a1d13 100%);
     border: 1px solid #62492c;
     border-radius: 14px;
@@ -789,7 +780,6 @@
 @media (max-width: 980px) {
     #popup_box_${DIALOG_ID} .popup_box_content { min-width: unset; }
     #nc-root .nc-grid,
-    #nc-root .nc-grid-bottom,
     #nc-root .nc-results,
     #nc-root .nc-mini-grid {
         grid-template-columns: 1fr;
@@ -817,16 +807,11 @@
             $('#nc_coin_stone').text(this.format(c.coinCost.stone));
             $('#nc_coin_iron').text(this.format(c.coinCost.iron));
 
-            $('#nc_next_wood').text(this.format(c.nextNobleCost.wood));
-            $('#nc_next_stone').text(this.format(c.nextNobleCost.stone));
-            $('#nc_next_iron').text(this.format(c.nextNobleCost.iron));
-
             $('#nc_result_coins').text(this.format(c.coinsPossible));
             $('#nc_result_nobles').text(this.format(c.noblesPossible));
             $('#nc_result_missing').text(this.format(c.missingCoins));
 
             $('#nc_usable_detail').html(this.resourceRows(c.usableTotal));
-            $('#nc_remaining_detail').html(this.resourceRows(c.remaining));
 
             const noExternal =
                 (c.externalIncoming.wood || 0) === 0 &&
@@ -850,8 +835,8 @@
                 `Desconto moeda: ${this.getMintDiscount()}%`,
                 `Moedas possíveis: ${this.format(c.coinsPossible)}`,
                 `Nobres possíveis: ${this.format(c.noblesPossible)}`,
-                `Custo próximo nobre: ${this.format(c.nextNobleCost.wood)} madeira / ${this.format(c.nextNobleCost.stone)} barro / ${this.format(c.nextNobleCost.iron)} ferro`,
-                `Sobrantes: ${this.format(c.remaining.wood)} madeira / ${this.format(c.remaining.stone)} barro / ${this.format(c.remaining.iron)} ferro`
+                `Moedas em falta p/ próximo: ${this.format(c.missingCoins)}`,
+                `Total considerado: ${this.format(c.usableTotal.wood)} madeira / ${this.format(c.usableTotal.stone)} barro / ${this.format(c.usableTotal.iron)} ferro`
             ].join('\n');
         }
 
