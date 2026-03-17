@@ -12,11 +12,10 @@
                 pt_PT: {
                     title: 'Calculadora de Nobres',
                     subtitle: 'Recursos totais, moedas e próximos nobres',
-                    loading: 'A carregar...',
                     loadingWorldConfig: 'A carregar configuração do mundo...',
-                    loadingResources: 'A somar recursos de todas as aldeias...',
-                    loadingSnob: 'A analisar academia...',
+                    loadingVillages: 'A ler recursos das aldeias...',
                     loadingIncoming: 'A ler recursos a chegar...',
+                    loadingSnob: 'A analisar academia...',
                     success: 'Calculado com sucesso!',
                     errorFetching: 'Erro ao carregar:',
                     premiumRequired: 'É necessário possuir conta premium para correr este script!',
@@ -32,6 +31,7 @@
                     costs: 'Custos usados',
                     results: 'Resultado',
                     nextNoble: 'Próximo nobre',
+                    nextNobleHint: 'Número de moedas exigidas pelo próximo nobre',
                     discount: 'Desconto moeda (%)',
                     existingCoins: 'Moedas já cunhadas',
                     coinCost: 'Custo da moeda',
@@ -40,6 +40,7 @@
                     nextCost: 'Custo do próximo',
                     afterThat: 'Seguinte depois',
                     resourcesLeft: 'Recursos sobrantes',
+                    villagesRead: 'Aldeias lidas',
                     detectionNote: 'Podes ajustar manualmente o próximo nobre, as moedas já cunhadas e o desconto.',
                     credits: 'Calculadora de Nobres by JDi4s',
                     wood: 'Madeira',
@@ -47,16 +48,17 @@
                     iron: 'Ferro',
                     coins: 'Moedas',
                     invalidWorldConfig: 'Configuração do mundo inválida.',
-                    copied: 'Resumo copiado!'
+                    copied: 'Resumo copiado!',
+                    yes: 'Sim',
+                    no: 'Não'
                 },
                 en_US: {
                     title: 'Noble Calculator',
                     subtitle: 'Total resources, coins and next nobles',
-                    loading: 'Loading...',
                     loadingWorldConfig: 'Loading world config...',
-                    loadingResources: 'Summing resources from all villages...',
-                    loadingSnob: 'Reading academy...',
+                    loadingVillages: 'Reading village resources...',
                     loadingIncoming: 'Reading incoming resources...',
+                    loadingSnob: 'Reading academy...',
                     success: 'Calculated successfully!',
                     errorFetching: 'Error while fetching:',
                     premiumRequired: 'A premium account is required to run this script!',
@@ -72,6 +74,7 @@
                     costs: 'Costs used',
                     results: 'Results',
                     nextNoble: 'Next noble',
+                    nextNobleHint: 'Number of coins required by the next noble',
                     discount: 'Coin discount (%)',
                     existingCoins: 'Minted coins',
                     coinCost: 'Coin cost',
@@ -80,6 +83,7 @@
                     nextCost: 'Next cost',
                     afterThat: 'After that',
                     resourcesLeft: 'Resources left',
+                    villagesRead: 'Villages read',
                     detectionNote: 'You can manually adjust next noble, current coins and discount.',
                     credits: 'Noble Calculator by JDi4s',
                     wood: 'Wood',
@@ -87,7 +91,9 @@
                     iron: 'Iron',
                     coins: 'Coins',
                     invalidWorldConfig: 'Invalid world configuration.',
-                    copied: 'Summary copied!'
+                    copied: 'Summary copied!',
+                    yes: 'Yes',
+                    no: 'No'
                 }
             };
         }
@@ -95,12 +101,18 @@
         constructor() {
             const allTranslations = NobresCalculator.translations();
             this.t = allTranslations[game_data.locale] || allTranslations.en_US;
+
             this.worldConfig = null;
             this.worldConfigFileName = `worldConfigFile_${game_data.world}`;
-            this.detectedData = null;
-            this.totalResources = null;
-            this.incomingResources = { wood: 0, stone: 0, iron: 0 };
             this.settingsKey = `nobresCalculatorSettings_${game_data.world}_${game_data.player.id}`;
+
+            this.detectedData = null;
+
+            this.villageResources = {};
+            this.incomingResByVillage = {};
+            this.totalResources = { wood: 0, stone: 0, iron: 0 };
+            this.incomingResources = { wood: 0, stone: 0, iron: 0 };
+            this.villagesRead = 0;
         }
 
         async init() {
@@ -148,14 +160,18 @@
         }
 
         async #loadData() {
-            UI.InfoMessage(this.t.loadingResources);
-            this.totalResources = await this.#getTotalResources();
+            UI.InfoMessage(this.t.loadingVillages);
+            this.villageResources = await this.#getVillageResources();
+
+            UI.InfoMessage(this.t.loadingIncoming);
+            this.incomingResByVillage = await this.#getIncomingResourcesByVillage();
+
+            this.totalResources = this.#sumVillageObjects(this.villageResources);
+            this.incomingResources = this.#sumVillageObjects(this.incomingResByVillage);
+            this.villagesRead = Object.keys(this.villageResources).length;
 
             UI.InfoMessage(this.t.loadingSnob);
             this.detectedData = await this.#getSnobData();
-
-            UI.InfoMessage(this.t.loadingIncoming);
-            this.incomingResources = await this.#getIncomingResources();
         }
 
         async #waitMilliseconds(lastRunTime, milliseconds = 0) {
@@ -195,7 +211,7 @@
             return tempData;
         }
 
-        async #setMaxLinesPerPage(screen, mode, value) {
+        async #setMaxLinesPerPage(screen, mode, value, extraParams = {}) {
             await new Promise(res => setTimeout(res, 200));
 
             const form = document.createElement("form");
@@ -213,7 +229,7 @@
 
             $.ajax({
                 type: 'POST',
-                url: this.#generateUrl(screen, mode, { action: 'change_page_size', type: 'all' }),
+                url: this.#generateUrl(screen, mode, Object.assign({ action: 'change_page_size', type: 'all' }, extraParams)),
                 data: dataString,
                 async: false
             });
@@ -225,6 +241,34 @@
 
         #parseNumber(text) {
             return parseInt(String(text || '').replace(/[^\d]/g, ''), 10) || 0;
+        }
+
+        #sumVillageObjects(obj) {
+            const totals = { wood: 0, stone: 0, iron: 0 };
+
+            Object.keys(obj || {}).forEach(id => {
+                totals.wood += Number(obj[id].wood || 0);
+                totals.stone += Number(obj[id].stone || 0);
+                totals.iron += Number(obj[id].iron || 0);
+            });
+
+            return totals;
+        }
+
+        #getCombinedTotals(includeIncoming = true) {
+            const totals = {
+                wood: this.totalResources.wood,
+                stone: this.totalResources.stone,
+                iron: this.totalResources.iron
+            };
+
+            if (includeIncoming) {
+                totals.wood += this.incomingResources.wood;
+                totals.stone += this.incomingResources.stone;
+                totals.iron += this.incomingResources.iron;
+            }
+
+            return totals;
         }
 
         #getCurrentGroupName() {
@@ -261,42 +305,48 @@
             }
         }
 
-        #extractResourcesFromTable(table) {
-            const totals = { wood: 0, stone: 0, iron: 0 };
+        #extractVillageIdFromRow(row) {
+            const $row = $(row);
+
+            const dataId =
+                $row.find('span.quickedit-vn').eq(0).attr('data-id') ||
+                $row.find('span[data-id]').eq(0).attr('data-id') ||
+                $row.find('[data-id]').eq(0).attr('data-id');
+
+            if (dataId) return String(dataId);
+
+            const villageLink = $row.find('a[href*="village="]').eq(0).attr('href');
+            if (villageLink) {
+                const m = villageLink.match(/village=(\d+)/);
+                if (m && m[1]) return m[1];
+            }
+
+            return null;
+        }
+
+        #extractResourceIndexesFromTable($table) {
             const headerMap = {};
 
-            $(table).find('thead th').each(function (idx) {
-                const img = $(this).find('img').attr('src') || '';
+            $table.find('thead th').each(function (idx) {
+                const img = ($(this).find('img').attr('src') || '').toLowerCase();
                 const txt = ($(this).text() || '').toLowerCase();
 
-                if (img.includes('holz') || txt.includes('wood') || txt.includes('madeira')) headerMap.wood = idx;
-                if (img.includes('lehm') || txt.includes('clay') || txt.includes('stone') || txt.includes('barro')) headerMap.stone = idx;
-                if (img.includes('eisen') || txt.includes('iron') || txt.includes('ferro')) headerMap.iron = idx;
+                if (img.includes('holz') || txt.includes('madeira') || txt.includes('wood')) headerMap.wood = idx;
+                if (img.includes('lehm') || txt.includes('barro') || txt.includes('clay') || txt.includes('stone')) headerMap.stone = idx;
+                if (img.includes('eisen') || txt.includes('ferro') || txt.includes('iron')) headerMap.iron = idx;
             });
 
             if (
                 headerMap.wood === undefined ||
                 headerMap.stone === undefined ||
                 headerMap.iron === undefined
-            ) {
-                return null;
-            }
+            ) return null;
 
-            const rows = $(table).find('tbody tr');
-            if (!rows.length) return null;
-
-            rows.each((_, row) => {
-                const cells = $(row).find('td');
-                totals.wood += this.#parseNumber($(cells.eq(headerMap.wood)).text());
-                totals.stone += this.#parseNumber($(cells.eq(headerMap.stone)).text());
-                totals.iron += this.#parseNumber($(cells.eq(headerMap.iron)).text());
-            });
-
-            return totals;
+            return headerMap;
         }
 
-        async #getTotalResources() {
-            const totals = { wood: 0, stone: 0, iron: 0 };
+        async #getVillageResources() {
+            const resourcesByVillage = {};
             let currentPage = 0;
             let guard = 0;
 
@@ -312,109 +362,97 @@
                 if (!rawPage) break;
 
                 const pageHtml = $.parseHTML(rawPage);
+                const $tables = $(pageHtml).find('table.vis');
+                if (!$tables.length) break;
 
-                const possibleTables = [
-                    $(pageHtml).find('#production_table'),
-                    $(pageHtml).find('#combined_table'),
-                    $(pageHtml).find('table.vis')
-                ];
+                let foundRows = 0;
 
-                let pageTotals = null;
+                $tables.each((_, table) => {
+                    const $table = $(table);
+                    const headerMap = this.#extractResourceIndexesFromTable($table);
+                    if (!headerMap) return;
 
-                for (const tableSet of possibleTables) {
-                    if (!tableSet || !tableSet.length) continue;
+                    const rows = $table.find('tbody tr');
+                    if (!rows.length) return;
 
-                    tableSet.each((_, table) => {
-                        if (pageTotals) return;
+                    rows.each((__, row) => {
+                        const villageId = this.#extractVillageIdFromRow(row);
+                        if (!villageId) return;
 
-                        const extracted = this.#extractResourcesFromTable($(table));
-                        if (!extracted) return;
+                        const cells = $(row).find('td');
+                        const wood = this.#parseNumber($(cells.eq(headerMap.wood)).text());
+                        const stone = this.#parseNumber($(cells.eq(headerMap.stone)).text());
+                        const iron = this.#parseNumber($(cells.eq(headerMap.iron)).text());
 
-                        const sum = extracted.wood + extracted.stone + extracted.iron;
-                        if (sum > 0) pageTotals = extracted;
+                        resourcesByVillage[villageId] = { wood, stone, iron };
+                        foundRows++;
                     });
+                });
 
-                    if (pageTotals) break;
-                }
-
-                if (!pageTotals) break;
-
-                const pageSum = pageTotals.wood + pageTotals.stone + pageTotals.iron;
-                if (pageSum === 0) break;
-
-                totals.wood += pageTotals.wood;
-                totals.stone += pageTotals.stone;
-                totals.iron += pageTotals.iron;
+                if (!foundRows) break;
 
                 currentPage++;
                 await this.#waitMilliseconds(Date.now(), 200);
             }
 
-            return totals;
+            return resourcesByVillage;
         }
 
-        async #getIncomingResources() {
-            const totals = { wood: 0, stone: 0, iron: 0 };
-
-            const possiblePages = [
+        async #getIncomingResourcesByVillage() {
+            const incomingByVillage = {};
+            const urls = [
                 this.#generateUrl('overview_villages', 'trader', { type: 'inc' }),
                 this.#generateUrl('overview_villages', 'trader'),
                 this.#generateUrl('market', 'traders')
             ];
 
-            for (const url of possiblePages) {
+            for (const url of urls) {
                 const rawPage = this.#fetchHtmlPage(url);
                 if (!rawPage) continue;
 
                 const pageHtml = $.parseHTML(rawPage);
-                const tables = $(pageHtml).find('table.vis');
-
+                const $tables = $(pageHtml).find('table.vis');
                 let foundSomething = false;
 
-                tables.each((_, table) => {
-                    const tableText = ($(table).text() || '').toLowerCase();
+                $tables.each((_, table) => {
+                    const $table = $(table);
+                    const rows = $table.find('tbody tr');
+                    if (!rows.length) return;
 
-                    const looksRelevant =
-                        tableText.includes('holz') ||
-                        tableText.includes('lehm') ||
-                        tableText.includes('eisen') ||
-                        tableText.includes('madeira') ||
-                        tableText.includes('barro') ||
-                        tableText.includes('ferro') ||
-                        tableText.includes('wood') ||
-                        tableText.includes('clay') ||
-                        tableText.includes('iron');
+                    rows.each((__, row) => {
+                        const villageId = this.#extractVillageIdFromRow(row);
+                        if (!villageId) return;
 
-                    if (!looksRelevant) return;
-
-                    $(table).find('tbody tr').each((__, row) => {
                         let wood = 0;
                         let stone = 0;
                         let iron = 0;
 
                         $(row).find('td').each((___, cell) => {
-                            const cellText = $(cell).text() || '';
-                            const cellValue = this.#parseNumber(cellText);
-                            const cellHtml = ($(cell).html() || '').toLowerCase();
+                            const html = (($(cell).html() || '') + '').toLowerCase();
+                            const value = this.#parseNumber($(cell).text());
 
-                            if (cellHtml.includes('holz')) wood += cellValue;
-                            if (cellHtml.includes('lehm')) stone += cellValue;
-                            if (cellHtml.includes('eisen')) iron += cellValue;
+                            if (html.includes('holz')) wood += value;
+                            if (html.includes('lehm')) stone += value;
+                            if (html.includes('eisen')) iron += value;
                         });
 
                         if (wood || stone || iron) {
-                            totals.wood += wood;
-                            totals.stone += stone;
-                            totals.iron += iron;
+                            if (!incomingByVillage[villageId]) {
+                                incomingByVillage[villageId] = { wood: 0, stone: 0, iron: 0 };
+                            }
+
+                            incomingByVillage[villageId].wood += wood;
+                            incomingByVillage[villageId].stone += stone;
+                            incomingByVillage[villageId].iron += iron;
                             foundSomething = true;
                         }
                     });
                 });
 
-                if (foundSomething) return totals;
+                if (foundSomething) return incomingByVillage;
             }
 
-            return totals;
+            return incomingByVillage;
         }
 
         async #getSnobData() {
@@ -437,6 +475,8 @@
             let nextNobleCoins = 1;
             let existingCoins = 0;
 
+            const saved = this.#loadSettings();
+
             const nextRegexes = [
                 /(?:pr[óo]ximo\s+nobre|next\s+noble)[\s\S]{0,120}?(\d+)\s*(?:moedas?|coins?)/i,
                 /(?:custa|costs?)[\s\S]{0,120}?(\d+)\s*(?:moedas?|coins?)[\s\S]{0,120}?(?:nobre|noble)/i,
@@ -453,8 +493,8 @@
             }
 
             const coinRegexes = [
-                /(?:tens|you have|possuis|owned|minted)[\s\S]{0,80}?(\d+)\s*(?:moedas?|coins?)/i,
                 /(?:moedas?\s+já\s+cunhadas|minted\s+coins?)[\s\S]{0,80}?(\d+)/i,
+                /(?:tens|you have|possuis|owned|minted)[\s\S]{0,80}?(\d+)\s*(?:moedas?|coins?)/i,
                 /gold_coins?[^0-9]{0,20}(\d+)/i
             ];
 
@@ -465,8 +505,6 @@
                     break;
                 }
             }
-
-            const saved = this.#loadSettings();
 
             return {
                 coinCost: baseCoinCost,
@@ -563,8 +601,7 @@
                 discountedCoinCost,
                 nextCost,
                 afterThatCost,
-                resourcesLeft: resources,
-                remainingBankedCoins: bankedCoins
+                resourcesLeft: resources
             };
         }
 
@@ -573,12 +610,13 @@
                 `${this.t.player}: ${game_data.player.name}`,
                 `${this.t.world}: ${game_data.world}`,
                 `${this.t.currentGroup}: ${this.#getCurrentGroupName()}`,
+                `${this.t.villagesRead}: ${this.villagesRead}`,
                 '',
                 `${this.t.affordableNow}: ${plan.affordableNobles}`,
                 `${this.t.nextNoble}: ${plan.nextCoinsNeeded} ${this.t.coins}`,
                 `${this.t.discount}: ${detected.discount}%`,
                 `${this.t.existingCoins}: ${detected.existingCoins || 0}`,
-                `${this.t.includeIncoming}: ${detected.includeIncoming ? 'Sim' : 'Não'}`,
+                `${this.t.includeIncoming}: ${detected.includeIncoming ? this.t.yes : this.t.no}`,
                 '',
                 `${this.t.nextCost}:`,
                 `${this.t.wood}: ${this.#formatNumber(plan.nextCost.wood)}`,
@@ -594,12 +632,7 @@
 
         async #createUI() {
             const detected = this.detectedData;
-
-            const effectiveResources = {
-                wood: this.totalResources.wood + (detected.includeIncoming ? this.incomingResources.wood : 0),
-                stone: this.totalResources.stone + (detected.includeIncoming ? this.incomingResources.stone : 0),
-                iron: this.totalResources.iron + (detected.includeIncoming ? this.incomingResources.iron : 0)
-            };
+            const effectiveResources = this.#getCombinedTotals(detected.includeIncoming);
 
             const plan = this.#calculatePlan(
                 effectiveResources,
@@ -643,6 +676,10 @@
                     <span class="nc-pill-label">${t.world}</span>
                     <strong>${worldName}</strong>
                 </div>
+                <div class="nc-pill">
+                    <span class="nc-pill-label">${t.villagesRead}</span>
+                    <strong>${this.villagesRead}</strong>
+                </div>
             </div>
 
             <div class="nc-actions">
@@ -684,7 +721,7 @@
                 </div>
 
                 <div class="nc-form-row">
-                    <label>${t.nextNoble}</label>
+                    <label title="${t.nextNobleHint}">${t.nextNoble}</label>
                     <input id="nc-next-noble" type="number" min="1" value="${detected.nextNobleCoins}">
                 </div>
 
@@ -769,328 +806,55 @@
 </div>
 
 <style>
-.popup_box_content {
-    min-width: 980px;
-    background: transparent !important;
-}
-.mds .popup_box_content {
-    min-width: unset !important;
-}
-
-#nc-root {
-    color: #f3e9d2;
-    font-family: Arial, sans-serif;
-}
-
-#nc-root .nc-shell {
-    background: linear-gradient(180deg, rgba(34,24,17,.96) 0%, rgba(23,16,11,.98) 100%);
-    border: 1px solid #6d5231;
-    border-radius: 18px;
-    box-shadow: 0 18px 45px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.04);
-    overflow: hidden;
-}
-
-#nc-root .nc-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: 16px;
-    padding: 20px 22px;
-    background: linear-gradient(135deg, rgba(88,57,29,.95) 0%, rgba(59,37,20,.97) 100%);
-    border-bottom: 1px solid #7c5b36;
-}
-
-#nc-root .nc-kicker {
-    color: #d6b98a;
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: .12em;
-    margin-bottom: 6px;
-}
-
-#nc-root h3 {
-    margin: 0;
-    font-size: 24px;
-    color: #fff3da;
-}
-
-#nc-root .nc-sub {
-    margin-top: 6px;
-    color: #d9c4a0;
-    font-size: 12px;
-}
-
-#nc-root .nc-stamp {
-    background: rgba(0,0,0,.18);
-    border: 1px solid rgba(255,255,255,.08);
-    color: #f6e7c9;
-    padding: 10px 12px;
-    border-radius: 12px;
-    font-weight: 700;
-    font-size: 12px;
-    white-space: nowrap;
-}
-
-#nc-root .nc-topbar {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 14px;
-    flex-wrap: wrap;
-    padding: 16px 22px;
-    background: rgba(0,0,0,.18);
-    border-bottom: 1px solid rgba(255,255,255,.05);
-}
-
-#nc-root .nc-meta {
-    display: flex;
-    gap: 10px;
-    flex-wrap: wrap;
-}
-
-#nc-root .nc-pill {
-    background: linear-gradient(180deg, #3a2819 0%, #2b1d12 100%);
-    border: 1px solid #6b4f31;
-    border-radius: 999px;
-    padding: 8px 12px;
-    color: #f2e1c0;
-    display: flex;
-    gap: 8px;
-    align-items: center;
-}
-
-#nc-root .nc-pill-label {
-    color: #c9ae80;
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: .04em;
-}
-
-#nc-root .nc-actions {
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-    align-items: center;
-}
-
-#nc-root .nc-btn {
-    height: 38px;
-    padding: 0 14px;
-    border-radius: 10px;
-    border: 1px solid #7d5b33;
-    cursor: pointer;
-    font-weight: 700;
-    transition: .15s ease;
-}
-
-#nc-root .nc-btn:hover {
-    transform: translateY(-1px);
-    filter: brightness(1.04);
-}
-
-#nc-root .nc-btn-secondary {
-    background: linear-gradient(180deg, #4d3723 0%, #372517 100%);
-    color: #f5e6c8;
-}
-
-#nc-root .nc-btn-primary {
-    background: linear-gradient(180deg, #b8863b 0%, #8d6228 100%);
-    color: #fff8ea;
-    border-color: #c89b53;
-}
-
-#nc-root .nc-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 16px;
-    padding: 18px 22px;
-}
-
-#nc-root .nc-results-grid {
-    grid-template-columns: 1fr 1fr 1fr;
-    padding-top: 0;
-}
-
-#nc-root .nc-panel {
-    background: linear-gradient(180deg, #2d1f14 0%, #21160e 100%);
-    border: 1px solid #644a2d;
-    border-radius: 16px;
-    padding: 16px;
-}
-
-#nc-root .nc-panel-head {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 12px;
-    margin-bottom: 12px;
-}
-
-#nc-root .nc-panel-head h4 {
-    margin: 0;
-    color: #fff1d5;
-    font-size: 16px;
-}
-
-#nc-root .nc-resource-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 10px;
-}
-
-#nc-root .nc-resource-card {
-    background: linear-gradient(180deg, #3a2819 0%, #2a1d13 100%);
-    border: 1px solid #62492c;
-    border-radius: 14px;
-    padding: 12px 8px;
-    text-align: center;
-}
-
-#nc-root .nc-resource-card img {
-    width: 20px;
-    height: 20px;
-    display: block;
-    margin: 0 auto 8px;
-}
-
-#nc-root .nc-resource-value {
-    font-size: 16px;
-    font-weight: 800;
-    color: #fff1d7;
-}
-
-#nc-root .nc-resource-name {
-    margin-top: 4px;
-    font-size: 11px;
-    color: #cbb186;
-}
-
-#nc-root .nc-form-row {
-    display: grid;
-    grid-template-columns: 1fr 140px;
-    gap: 12px;
-    align-items: center;
-    margin-bottom: 12px;
-}
-
-#nc-root .nc-form-row label {
-    color: #e9d8b8;
-    font-size: 13px;
-}
-
-#nc-root .nc-form-row input {
-    height: 36px;
-    border-radius: 10px;
-    border: 1px solid #6d5231;
-    background: #17100b;
-    color: #f6e8cb;
-    padding: 0 10px;
-    box-sizing: border-box;
-}
-
-#nc-root .nc-cost-block {
-    margin-top: 14px;
-    padding: 12px;
-    border-radius: 12px;
-    background: rgba(0,0,0,.18);
-    border: 1px solid rgba(255,255,255,.05);
-}
-
-#nc-root .nc-cost-title {
-    color: #fff1d5;
-    font-weight: 700;
-    margin-bottom: 8px;
-}
-
-#nc-root .nc-cost-line {
-    color: #eadcc0;
-    font-size: 13px;
-    margin: 4px 0;
-}
-
-#nc-root .nc-note {
-    margin-top: 14px;
-    color: #bfa680;
-    font-size: 11px;
-}
-
-#nc-root .nc-results-cards {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 10px;
-}
-
-#nc-root .nc-result-card {
-    background: linear-gradient(180deg, #3a2819 0%, #2a1d13 100%);
-    border: 1px solid #62492c;
-    border-radius: 14px;
-    padding: 14px;
-    text-align: center;
-}
-
-#nc-root .nc-result-label {
-    color: #cbb186;
-    font-size: 12px;
-}
-
-#nc-root .nc-result-value {
-    margin-top: 6px;
-    font-size: 24px;
-    font-weight: 800;
-    color: #fff;
-}
-
-#nc-root .nc-leftover {
-    margin: 0 22px 18px;
-}
-
-#nc-root .nc-footer {
-    padding: 0 22px 18px;
-    color: #a98d64;
-    font-size: 11px;
-}
-
-#nc-root .nc-subpanel {
-    margin-top: 16px;
-    padding-top: 14px;
-    border-top: 1px solid rgba(255,255,255,.08);
-}
-
-#nc-root .nc-check-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-top: 12px;
-    color: #eadcc0;
-    font-size: 13px;
-    cursor: pointer;
-}
-
-#nc-root .nc-check-row input[type="checkbox"] {
-    transform: scale(1.1);
-}
-
-@media (max-width: 980px) {
-    .popup_box_content {
-        min-width: unset;
-    }
-
-    #nc-root .nc-grid,
-    #nc-root .nc-results-grid,
-    #nc-root .nc-resource-grid,
-    #nc-root .nc-results-cards {
-        grid-template-columns: 1fr;
-    }
-
-    #nc-root .nc-header,
-    #nc-root .nc-topbar {
-        flex-direction: column;
-        align-items: stretch;
-    }
-
-    #nc-root .nc-form-row {
-        grid-template-columns: 1fr;
-    }
+.popup_box_content { min-width:980px; background:transparent!important; }
+.mds .popup_box_content { min-width:unset!important; }
+#nc-root { color:#f3e9d2; font-family:Arial,sans-serif; }
+#nc-root .nc-shell { background:linear-gradient(180deg,rgba(34,24,17,.96) 0%,rgba(23,16,11,.98) 100%); border:1px solid #6d5231; border-radius:18px; box-shadow:0 18px 45px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.04); overflow:hidden; }
+#nc-root .nc-header { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; padding:20px 22px; background:linear-gradient(135deg,rgba(88,57,29,.95) 0%,rgba(59,37,20,.97) 100%); border-bottom:1px solid #7c5b36; }
+#nc-root .nc-kicker { color:#d6b98a; font-size:11px; text-transform:uppercase; letter-spacing:.12em; margin-bottom:6px; }
+#nc-root h3 { margin:0; font-size:24px; color:#fff3da; }
+#nc-root .nc-sub { margin-top:6px; color:#d9c4a0; font-size:12px; }
+#nc-root .nc-stamp { background:rgba(0,0,0,.18); border:1px solid rgba(255,255,255,.08); color:#f6e7c9; padding:10px 12px; border-radius:12px; font-weight:700; font-size:12px; white-space:nowrap; }
+#nc-root .nc-topbar { display:flex; justify-content:space-between; align-items:center; gap:14px; flex-wrap:wrap; padding:16px 22px; background:rgba(0,0,0,.18); border-bottom:1px solid rgba(255,255,255,.05); }
+#nc-root .nc-meta { display:flex; gap:10px; flex-wrap:wrap; }
+#nc-root .nc-pill { background:linear-gradient(180deg,#3a2819 0%,#2b1d12 100%); border:1px solid #6b4f31; border-radius:999px; padding:8px 12px; color:#f2e1c0; display:flex; gap:8px; align-items:center; }
+#nc-root .nc-pill-label { color:#c9ae80; font-size:11px; text-transform:uppercase; letter-spacing:.04em; }
+#nc-root .nc-actions { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+#nc-root .nc-btn { height:38px; padding:0 14px; border-radius:10px; border:1px solid #7d5b33; cursor:pointer; font-weight:700; transition:.15s ease; }
+#nc-root .nc-btn:hover { transform:translateY(-1px); filter:brightness(1.04); }
+#nc-root .nc-btn-secondary { background:linear-gradient(180deg,#4d3723 0%,#372517 100%); color:#f5e6c8; }
+#nc-root .nc-btn-primary { background:linear-gradient(180deg,#b8863b 0%,#8d6228 100%); color:#fff8ea; border-color:#c89b53; }
+#nc-root .nc-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; padding:18px 22px; }
+#nc-root .nc-results-grid { grid-template-columns:1fr 1fr 1fr; padding-top:0; }
+#nc-root .nc-panel { background:linear-gradient(180deg,#2d1f14 0%,#21160e 100%); border:1px solid #644a2d; border-radius:16px; padding:16px; }
+#nc-root .nc-panel-head { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:12px; }
+#nc-root .nc-panel-head h4 { margin:0; color:#fff1d5; font-size:16px; }
+#nc-root .nc-resource-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+#nc-root .nc-resource-card { background:linear-gradient(180deg,#3a2819 0%,#2a1d13 100%); border:1px solid #62492c; border-radius:14px; padding:12px 8px; text-align:center; }
+#nc-root .nc-resource-card img { width:20px; height:20px; display:block; margin:0 auto 8px; }
+#nc-root .nc-resource-value { font-size:16px; font-weight:800; color:#fff1d7; }
+#nc-root .nc-resource-name { margin-top:4px; font-size:11px; color:#cbb186; }
+#nc-root .nc-form-row { display:grid; grid-template-columns:1fr 140px; gap:12px; align-items:center; margin-bottom:12px; }
+#nc-root .nc-form-row label { color:#e9d8b8; font-size:13px; }
+#nc-root .nc-form-row input { height:36px; border-radius:10px; border:1px solid #6d5231; background:#17100b; color:#f6e8cb; padding:0 10px; box-sizing:border-box; }
+#nc-root .nc-cost-block { margin-top:14px; padding:12px; border-radius:12px; background:rgba(0,0,0,.18); border:1px solid rgba(255,255,255,.05); }
+#nc-root .nc-cost-title { color:#fff1d5; font-weight:700; margin-bottom:8px; }
+#nc-root .nc-cost-line { color:#eadcc0; font-size:13px; margin:4px 0; }
+#nc-root .nc-note { margin-top:14px; color:#bfa680; font-size:11px; }
+#nc-root .nc-results-cards { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+#nc-root .nc-result-card { background:linear-gradient(180deg,#3a2819 0%,#2a1d13 100%); border:1px solid #62492c; border-radius:14px; padding:14px; text-align:center; }
+#nc-root .nc-result-label { color:#cbb186; font-size:12px; }
+#nc-root .nc-result-value { margin-top:6px; font-size:24px; font-weight:800; color:#fff; }
+#nc-root .nc-leftover { margin:0 22px 18px; }
+#nc-root .nc-footer { padding:0 22px 18px; color:#a98d64; font-size:11px; }
+#nc-root .nc-subpanel { margin-top:16px; padding-top:14px; border-top:1px solid rgba(255,255,255,.08); }
+#nc-root .nc-check-row { display:flex; align-items:center; gap:10px; margin-top:12px; color:#eadcc0; font-size:13px; cursor:pointer; }
+#nc-root .nc-check-row input[type="checkbox"] { transform:scale(1.1); }
+@media (max-width:980px) {
+ .popup_box_content { min-width:unset; }
+ #nc-root .nc-grid, #nc-root .nc-results-grid, #nc-root .nc-resource-grid, #nc-root .nc-results-cards { grid-template-columns:1fr; }
+ #nc-root .nc-header, #nc-root .nc-topbar { flex-direction:column; align-items:stretch; }
+ #nc-root .nc-form-row { grid-template-columns:1fr; }
 }
 </style>
 `;
@@ -1156,11 +920,7 @@
                 const existingCoins = parseInt($('#nc-existing-coins').val(), 10) || 0;
                 const includeIncoming = $('#nc-include-incoming').is(':checked');
 
-                const currentResources = {
-                    wood: this.totalResources.wood + (includeIncoming ? this.incomingResources.wood : 0),
-                    stone: this.totalResources.stone + (includeIncoming ? this.incomingResources.stone : 0),
-                    iron: this.totalResources.iron + (includeIncoming ? this.incomingResources.iron : 0)
-                };
+                const currentResources = this.#getCombinedTotals(includeIncoming);
 
                 const currentPlan = this.#calculatePlan(
                     currentResources,
