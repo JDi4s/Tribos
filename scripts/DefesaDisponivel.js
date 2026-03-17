@@ -4,7 +4,6 @@
 * Edit: botão Discord + envio do total
 */
 
-var webhookURL = 'https://discord.com/api/webhooks/1477668553166422189/TaOeFZGwxb2c0_b7ytfXujYv-9QM470fO_Hlx8DZaVnToXpFtnLMeHHLkWSTwFTDH6fF';
 
 if (typeof villagesTroopsCounter !== 'undefined') {
     villagesTroopsCounter.init();
