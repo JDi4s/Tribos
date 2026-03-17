@@ -27,6 +27,12 @@
                     semi: 'Semis',
                     rebuilding: 'Rebuilding',
                     noGroup: 'All',
+                    copy: 'Copy',
+                    bbCopied: 'BBCode copied!',
+                    summaryTotal: 'Total Summary',
+                    homePlusScavenge: 'Home + Scavenging',
+                    atHomeOnly: 'At home',
+                    exportTroops: 'Export Troop Count',
                     errorMessages: {
                         premiumRequired: 'Error. A premium account is required to run this script!',
                         errorFetching: 'An error occurred while trying to fetch the following URL:',
@@ -59,6 +65,12 @@
                     semi: 'Semis',
                     rebuilding: 'A recrutar',
                     noGroup: 'Todos',
+                    copy: 'Copiar',
+                    bbCopied: 'BBCode copiado!',
+                    summaryTotal: 'Resumo Total',
+                    homePlusScavenge: 'Casa + Busca',
+                    atHomeOnly: 'Em casa',
+                    exportTroops: 'Exportar Contagem de Tropas',
                     errorMessages: {
                         premiumRequired: 'Erro. É necessário possuir conta premium para correr este script!',
                         errorFetching: 'Ocorreu um erro ao tentar carregar o seguinte URL:',
@@ -109,7 +121,10 @@
                 worldConfig = await this.#getWorldConfig();
             }
 
-            this.worldConfig = typeof worldConfig === 'string' ? $.parseXML(worldConfig) : worldConfig;
+            this.worldConfig =
+                typeof worldConfig === 'string'
+                    ? $.parseXML(worldConfig)
+                    : worldConfig;
 
             try {
                 this.isScavengingWorld =
@@ -126,9 +141,10 @@
 
         async #getWorldConfig() {
             const xml = this.#fetchHtmlPage('/interface.php?func=get_config');
-            const xmlString = typeof xml === 'string'
-                ? xml
-                : new XMLSerializer().serializeToString(xml);
+            const xmlString =
+                typeof xml === 'string'
+                    ? xml
+                    : new XMLSerializer().serializeToString(xml);
 
             localStorage.setItem(this.worldConfigFileName, xmlString);
             await this.#waitMilliseconds(Date.now(), 200);
@@ -196,14 +212,14 @@
 
                 lastRunTime = Date.now();
 
-                $.each(scavengingObject, function (id, villageData) {
+                $.each(scavengingObject, function (_, villageData) {
                     $.each(villageData.unit_counts_home || {}, function (key, value) {
                         if (key !== 'militia' && typeof troopsObj.villagesTroops[key] !== 'undefined') {
                             troopsObj.villagesTroops[key] += value;
                         }
                     });
 
-                    $.each(villageData.options || [], function (id, option) {
+                    $.each(villageData.options || [], function (_, option) {
                         if (option.scavenging_squad !== null) {
                             $.each(option.scavenging_squad.unit_counts || {}, function (key, value) {
                                 if (key !== 'militia' && typeof troopsObj.scavengingTroops[key] !== 'undefined') {
@@ -278,12 +294,12 @@
                 lastVillageId = lastVillageIdTemp;
 
                 const currentObj = this;
-                $.each(troopsTable, function (id, tbodyObj) {
+                $.each(troopsTable, function (_, tbodyObj) {
                     const villageTroops = $(tbodyObj).find('tr').eq(0);
                     const villageTroopsLine = $(villageTroops).find('td:gt(1)');
                     let c = 0;
 
-                    $.each(currentObj.availableUnits, function (key, value) {
+                    $.each(currentObj.availableUnits, function (_, value) {
                         troopsObj.villagesTroops[value] += parseInt(villageTroopsLine.eq(c).text().trim(), 10) || 0;
                         c++;
                     });
@@ -329,13 +345,13 @@
             const groupsArr = {};
 
             if ($(groups).length > 0) {
-                $.each(groups, function (id, group) {
+                $.each(groups, function (_, group) {
                     const val = $(group).text().trim();
                     groupsArr[group.getAttribute('data-group-id')] = val.substring(1, val.length - 1);
                 });
             } else {
                 groups = $(html).find('.vis_item select option');
-                $.each(groups, function (id, group) {
+                $.each(groups, function (_, group) {
                     groupsArr[(new URLSearchParams($(group).val())).get('group')] = $(group).text().trim();
                 });
             }
@@ -424,13 +440,13 @@
                 lastVillageId = lastVillageIdTemp;
 
                 const currentObj = this;
-                $.each(troopsTable, function (id, tbodyObj) {
+                $.each(troopsTable, function (_, tbodyObj) {
                     const villageTroops = $(tbodyObj).find('tr').eq(0);
                     const villageTroopsLine = $(villageTroops).find('td:gt(1)');
                     let c = 0;
                     const villageData = {};
 
-                    $.each(currentObj.availableUnits, function (key, value) {
+                    $.each(currentObj.availableUnits, function (_, value) {
                         villageData[value] = parseInt(villageTroopsLine.eq(c).text().trim(), 10) || 0;
                         c++;
                     });
@@ -553,6 +569,69 @@
             const visibleDefensiveTroops = this.#buildVisibleDefensiveTroops(totalTroops);
             const nukeStatus = await this.#getNukeStatus();
             const bbCode = this.#getTroopsBBCode(totalTroops);
+            const groups = this.#getGroupsObj();
+            const currentGroupName = this.#getCurrentGroupName();
+            const serverTime = this.#getServerTime();
+            const t = this.UserTranslation;
+            const availableUnits = this.availableUnits;
+            const isScavengingWorld = this.isScavengingWorld;
+            const playerName = game_data.player.name;
+            const worldName = game_data.world;
+
+            const groupsHtml = (function buildGroupsHtml() {
+                let html = '';
+                $.each(groups, function (groupId, group) {
+                    const selected = String(game_data.group_id) === String(groupId) ? 'selected' : '';
+                    html += `<option value="${groupId}" ${selected}>${group}</option>`;
+                });
+                return `<select id="dd-group-select" onchange="villagesTroopsCounter.changeGroup(this)">${html}</select>`;
+            })();
+
+            const troopsHeader = (function getTroopsHeader() {
+                let html = `<tr><th class="center" style="width:0px;"></th>`;
+                $.each(availableUnits, function (_, value) {
+                    html += `<th style="text-align:center" width="35"><a href="#" class="unit_link" data-unit="${value}"><img src="https://dspt.innogamescdn.com/asset/2a2f957f/graphic/unit/unit_${value}.png"></a></th>`;
+                });
+                html += `</tr>`;
+                return html;
+            })();
+
+            function getTroopsLine(translation, troopsObjLine, type = null) {
+                const troops = type === null ? troopsObjLine : (() => {
+                    const merged = {};
+                    $.each(troopsObjLine.villagesTroops, function (key, value) {
+                        merged[key] = value + (troopsObjLine.scavengingTroops[key] || 0);
+                    });
+                    return merged;
+                })();
+
+                let html = `<tr><td class="center" style="text-wrap: nowrap;">${translation}</td>`;
+                $.each(troops, function (key, value) {
+                    html += `<td class="center" data-unit="${key}">${value}</td>`;
+                });
+                html += `</tr>`;
+                return html;
+            }
+
+            function renderDefCard(unit, value) {
+                const labels = {
+                    spear: 'Lanceiros',
+                    sword: 'Espadas',
+                    archer: 'Arqueiros',
+                    spy: 'Batedores',
+                    heavy: 'Pesadas',
+                    catapult: 'Catas',
+                    knight: 'Paladino'
+                };
+
+                return `
+                    <div class="dd-unit-card">
+                        <img src="https://dspt.innogamescdn.com/asset/2a2f957f/graphic/unit/unit_${unit}.png" alt="${unit}">
+                        <div class="dd-unit-value">${new Intl.NumberFormat('pt-PT').format(Number(value || 0))}</div>
+                        <div class="dd-unit-name">${labels[unit] || unit}</div>
+                    </div>
+                `;
+            }
 
             const html = `
 <div id="dd-root">
@@ -560,34 +639,34 @@
         <div class="dd-header">
             <div class="dd-header-left">
                 <div class="dd-kicker">Tribal Wars</div>
-                <h3>${this.UserTranslation.title}</h3>
-                <div class="dd-sub">${this.UserTranslation.subtitle}</div>
+                <h3>${t.title}</h3>
+                <div class="dd-sub">${t.subtitle}</div>
             </div>
             <div class="dd-header-right">
-                <div class="dd-stamp">${this.#getServerTime()}</div>
+                <div class="dd-stamp">${serverTime}</div>
             </div>
         </div>
 
         <div class="dd-topbar">
             <div class="dd-meta">
                 <div class="dd-pill">
-                    <span class="dd-pill-label">${this.UserTranslation.group}</span>
-                    <strong>${this.#getCurrentGroupName()}</strong>
+                    <span class="dd-pill-label">${t.group}</span>
+                    <strong>${currentGroupName}</strong>
                 </div>
                 <div class="dd-pill">
-                    <span class="dd-pill-label">${this.UserTranslation.player}</span>
-                    <strong>${game_data.player.name}</strong>
+                    <span class="dd-pill-label">${t.player}</span>
+                    <strong>${playerName}</strong>
                 </div>
                 <div class="dd-pill">
-                    <span class="dd-pill-label">${this.UserTranslation.server}</span>
-                    <strong>${game_data.world}</strong>
+                    <span class="dd-pill-label">${t.server}</span>
+                    <strong>${worldName}</strong>
                 </div>
             </div>
 
             <div class="dd-actions">
-                ${getGroupsHtml(this)}
-                <button id="dd-refresh" class="dd-btn dd-btn-secondary">${this.UserTranslation.refresh}</button>
-                <button id="dd-send-discord" class="dd-btn dd-btn-primary">${this.UserTranslation.sendDiscord}</button>
+                ${groupsHtml}
+                <button id="dd-refresh" class="dd-btn dd-btn-secondary">${t.refresh}</button>
+                <button id="dd-send-discord" class="dd-btn dd-btn-primary">${t.sendDiscord}</button>
             </div>
         </div>
 
@@ -595,35 +674,35 @@
             <div class="dd-card dd-stat dd-full">
                 <div class="dd-stat-icon">🚀</div>
                 <div class="dd-stat-value">${nukeStatus.full}</div>
-                <div class="dd-stat-label">${this.UserTranslation.full}</div>
+                <div class="dd-stat-label">${t.full}</div>
             </div>
             <div class="dd-card dd-stat dd-semi">
                 <div class="dd-stat-icon">📈</div>
                 <div class="dd-stat-value">${nukeStatus.semi}</div>
-                <div class="dd-stat-label">${this.UserTranslation.semi}</div>
+                <div class="dd-stat-label">${t.semi}</div>
             </div>
             <div class="dd-card dd-stat dd-rec">
                 <div class="dd-stat-icon">🛠️</div>
                 <div class="dd-stat-value">${nukeStatus.rebuilding}</div>
-                <div class="dd-stat-label">${this.UserTranslation.rebuilding}</div>
+                <div class="dd-stat-label">${t.rebuilding}</div>
             </div>
         </div>
 
         <div class="dd-grid">
             <div class="dd-panel dd-panel-large">
                 <div class="dd-panel-head">
-                    <h4>Resumo Total</h4>
-                    <span class="dd-panel-note">${this.isScavengingWorld ? 'Casa + Busca' : 'Em casa'}</span>
+                    <h4>${t.summaryTotal}</h4>
+                    <span class="dd-panel-note">${isScavengingWorld ? t.homePlusScavenge : t.atHomeOnly}</span>
                 </div>
                 <div class="dd-table-wrap">
                     <table id="support_sum" class="vis overview_table dd-table-modern" width="100%">
                         <thead>
-                            ${getTroopsHeader(this.availableUnits)}
+                            ${troopsHeader}
                         </thead>
                         <tbody>
-                            ${this.isScavengingWorld ? getTroopsLine(this.UserTranslation.home, troopsObj.villagesTroops) : ''}
-                            ${this.isScavengingWorld ? getTroopsLine(this.UserTranslation.scavenging, troopsObj.scavengingTroops) : ''}
-                            ${getTroopsLine(this.UserTranslation.total, troopsObj, 1)}
+                            ${isScavengingWorld ? getTroopsLine(t.home, troopsObj.villagesTroops) : ''}
+                            ${isScavengingWorld ? getTroopsLine(t.scavenging, troopsObj.scavengingTroops) : ''}
+                            ${getTroopsLine(t.total, troopsObj, 1)}
                         </tbody>
                     </table>
                 </div>
@@ -631,7 +710,7 @@
 
             <div class="dd-panel">
                 <div class="dd-panel-head">
-                    <h4>${this.UserTranslation.defensiveTotal}</h4>
+                    <h4>${t.defensiveTotal}</h4>
                 </div>
                 <div class="dd-def-grid">
                     ${renderDefCard('spear', visibleDefensiveTroops.spear)}
@@ -647,13 +726,13 @@
 
         <div class="dd-panel dd-panel-bb">
             <div class="dd-panel-head">
-                <h4>Exportar Contagem de Tropas</h4>
-                <button id="dd-copy-bbcode" class="dd-btn dd-btn-secondary">Copiar</button>
+                <h4>${t.exportTroops}</h4>
+                <button id="dd-copy-bbcode" class="dd-btn dd-btn-secondary">${t.copy}</button>
             </div>
             <textarea readonly id="dd-bbcode-area">${bbCode.trim()}</textarea>
         </div>
 
-        <div class="dd-footer">${this.UserTranslation.credits}</div>
+        <div class="dd-footer">${t.credits}</div>
     </div>
 </div>
 
@@ -993,69 +1072,13 @@
                 const text = $('#dd-bbcode-area').val();
                 try {
                     await navigator.clipboard.writeText(text);
-                    UI.SuccessMessage('BBCode copiado!', 1500);
+                    UI.SuccessMessage(t.bbCopied, 1500);
                 } catch (e) {
                     $('#dd-bbcode-area').trigger('select');
                 }
             });
 
-            UI.SuccessMessage(this.UserTranslation.successMessage, 500);
-
-            function getGroupsHtml(objInstance) {
-                const groups = objInstance.#getGroupsObj();
-                let html = '';
-                $.each(groups, function (groupId, group) {
-                    const selected = String(game_data.group_id) === String(groupId) ? 'selected' : '';
-                    html += `<option value="${groupId}" ${selected}>${group}</option>`;
-                });
-                return `<select id="dd-group-select" onchange="villagesTroopsCounter.changeGroup(this)">${html}</select>`;
-            }
-
-            function getTroopsLine(translation, troopsObj, type = null) {
-                const troops = type === null ? (() => troopsObj) : (() => {
-                    const merged = {};
-                    $.each(troopsObj.villagesTroops, function (key, value) {
-                        merged[key] = value + (troopsObj.scavengingTroops[key] || 0);
-                    });
-                    return merged;
-                });
-
-                let html = `<tr><td class="center" style="text-wrap: nowrap;">${translation}</td>`;
-                $.each(troops(), function (key, value) {
-                    html += `<td class="center" data-unit="${key}">${value}</td>`;
-                });
-                html += `</tr>`;
-                return html;
-            }
-
-            function getTroopsHeader(availableUnits) {
-                let html = `<tr><th class="center" style="width:0px;"></th>`;
-                $.each(availableUnits, function (key, value) {
-                    html += `<th style="text-align:center" width="35"><a href="#" class="unit_link" data-unit="${value}"><img src="https://dspt.innogamescdn.com/asset/2a2f957f/graphic/unit/unit_${value}.png"></a></th>`;
-                });
-                html += `</tr>`;
-                return html;
-            }
-
-            function renderDefCard(unit, value) {
-                const labels = {
-                    spear: 'Lanceiros',
-                    sword: 'Espadas',
-                    archer: 'Arqueiros',
-                    spy: 'Batedores',
-                    heavy: 'Pesadas',
-                    catapult: 'Catas',
-                    knight: 'Paladino'
-                };
-
-                return `
-                    <div class="dd-unit-card">
-                        <img src="https://dspt.innogamescdn.com/asset/2a2f957f/graphic/unit/unit_${unit}.png" alt="${unit}">
-                        <div class="dd-unit-value">${new Intl.NumberFormat('pt-PT').format(Number(value || 0))}</div>
-                        <div class="dd-unit-name">${labels[unit] || unit}</div>
-                    </div>
-                `;
-            }
+            UI.SuccessMessage(t.successMessage, 500);
         }
 
         async changeGroup(obj) {
