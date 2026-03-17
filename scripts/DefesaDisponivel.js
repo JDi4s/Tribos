@@ -103,42 +103,46 @@ $.getScript(
         })();
 
         async function buildUI() {
-            const homeTroops = collectTroopsAtHome();
-            const totalTroopsAtHome = getTotalHomeTroops(homeTroops);
+    const homeTroops = collectTroopsAtHome();
+    const totalTroopsAtHome = getTotalHomeTroops(homeTroops);
 
-            const scavengingTroops = await getScavengingTroops();
-            const totalTroopsCombined = mergeTroops(totalTroopsAtHome, scavengingTroops);
+    const scavengingTroops = await getScavengingTroops();
+    const totalTroopsCombined = mergeTroops(totalTroopsAtHome, scavengingTroops);
 
-            const bbCode = getTroopsBBCode(totalTroopsCombined);
-            const content = prepareContent(totalTroopsCombined, bbCode);
+    console.log("CASA:", totalTroopsAtHome);
+    console.log("BUSCAS:", scavengingTroops);
+    console.log("TOTAL:", totalTroopsCombined);
 
-            twSDK.renderBoxWidget(
-                content,
-                scriptConfig.scriptData.prefix,
-                'ra-own-home-troops-count'
-            );
+    const bbCode = getTroopsBBCode(totalTroopsCombined);
+    const content = prepareContent(totalTroopsCombined, bbCode);
 
-            jQuery('#sendToDiscord').remove();
-            jQuery('.ra-own-home-troops-count').append(`
-                <button id="sendToDiscord" class="btn-twf">
-                    Partilhar defesa disponível no ticket
-                </button>
-            `);
+    twSDK.renderBoxWidget(
+        content,
+        scriptConfig.scriptData.prefix,
+        'ra-own-home-troops-count'
+    );
 
-            jQuery('#sendToDiscord').on('click', () => {
-                sendDefensiveTroopsToDiscord(totalTroopsCombined);
-            });
+    jQuery('#sendToDiscord').remove();
+    jQuery('.ra-own-home-troops-count').append(`
+        <button id="sendToDiscord" class="btn-twf">
+            Partilhar defesa disponível no ticket
+        </button>
+    `);
 
-            setTimeout(() => {
-                if (!game_data.units.includes('archer')) {
-                    jQuery('.archer-world').hide();
-                }
+    jQuery('#sendToDiscord').on('click', () => {
+        sendDefensiveTroopsToDiscord(totalTroopsCombined);
+    });
 
-                if (!game_data.units.includes('knight')) {
-                    jQuery('.paladin-world').hide();
-                }
-            }, 100);
+    setTimeout(() => {
+        if (!game_data.units.includes('archer')) {
+            jQuery('.archer-world').hide();
         }
+
+        if (!game_data.units.includes('knight')) {
+            jQuery('.paladin-world').hide();
+        }
+    }, 100);
+}
 
         function sendDefensiveTroopsToDiscord(totalTroopsCombined) {
             const playerName = game_data.player.name;
