@@ -1,26 +1,20 @@
 (function () {
-    var SCRIPT_NS = 'nobres_calculator_debug';
-    var DIALOG_ID = 'nobres_calculator_dialog';
+    var SCRIPT_NS = 'nobres_calculator_debug_popup';
+    var DIALOG_ID = 'nobres_calculator_debug_dialog';
 
     try { $(document).off('.' + SCRIPT_NS); } catch (e) {}
     try { Dialog.close(); } catch (e) {}
-    try { delete window.nobresCalculator; } catch (e) { window.nobresCalculator = undefined; }
+    try { delete window.nobresCalculatorDebug; } catch (e) { window.nobresCalculatorDebug = undefined; }
 
-    class NobresCalculator {
-        constructor() {
-            this.villageResources = {};
-            this.incomingResByVillage = {};
-        }
-
+    class NobresCalculatorDebug {
         async init() {
-            console.clear();
-            console.log('=== NOBRES DEBUG START ===');
+            const sections = [];
 
-            await this.debugVillageResources();
-            await this.debugIncoming();
-            await this.debugSnob();
+            sections.push(await this.debugVillageResources());
+            sections.push(await this.debugIncoming());
+            sections.push(await this.debugSnob());
 
-            UI.SuccessMessage('Debug enviado para a consola (F12).', 3000);
+            this.showResult(sections.join('\n\n' + '='.repeat(80) + '\n\n'));
         }
 
         #generateUrl(screen, mode = null, extraParams = {}) {
@@ -46,41 +40,55 @@
                     tempData = data;
                 },
                 error: function () {
-                    console.log('ERRO AO CARREGAR', url);
+                    tempData = `ERRO AO CARREGAR: ${url}`;
                 }
             });
 
             return tempData;
         }
 
+        #cleanText(text) {
+            return String(text || '')
+                .replace(/\s+/g, ' ')
+                .trim();
+        }
+
+        #truncate(text, max = 5000) {
+            text = String(text || '');
+            return text.length > max ? text.slice(0, max) + '\n...[cortado]...' : text;
+        }
+
         async debugVillageResources() {
             const url = this.#generateUrl('overview_villages', 'prod', { page: 0 });
             const rawPage = this.#fetchHtmlPage(url);
 
-            console.log('--- OVERVIEW PROD URL ---');
-            console.log(url);
+            let out = [];
+            out.push('### OVERVIEW PROD');
+            out.push('URL: ' + url);
 
-            if (!rawPage) {
-                console.log('SEM HTML DA OVERVIEW');
-                return;
+            if (!rawPage || typeof rawPage !== 'string') {
+                out.push('Sem HTML válido.');
+                return out.join('\n');
             }
 
             const pageHtml = $.parseHTML(rawPage);
             const tables = $(pageHtml).find('table');
-            console.log('--- TABLES ENCONTRADAS NA OVERVIEW ---');
-            console.log('Quantidade:', tables.length);
+
+            out.push('Tabelas encontradas: ' + tables.length);
 
             tables.each((i, table) => {
-                const text = ($(table).text() || '').trim().replace(/\s+/g, ' ').slice(0, 800);
-                console.log(`TABLE ${i}`, table.id || '(sem id)', table.className || '(sem class)');
-                console.log(text);
+                const text = this.#truncate(this.#cleanText($(table).text()), 1200);
+                out.push(`\n[TABLE ${i}] id=${table.id || '(sem id)'} class=${table.className || '(sem class)'}`);
+                out.push(text);
             });
 
-            const firstTable = tables.eq(0);
-            if (firstTable.length) {
-                console.log('--- HTML PRIMEIRA TABELA OVERVIEW ---');
-                console.log(firstTable.prop('outerHTML'));
+            const prodTable = $(pageHtml).find('#production_table').first();
+            if (prodTable.length) {
+                out.push('\nHTML #production_table:');
+                out.push(this.#truncate(prodTable.prop('outerHTML'), 6000));
             }
+
+            return out.join('\n');
         }
 
         async debugIncoming() {
@@ -90,69 +98,102 @@
                 this.#generateUrl('market', 'traders')
             ];
 
+            let out = [];
+            out.push('### INCOMING');
+
             for (const url of urls) {
                 const rawPage = this.#fetchHtmlPage(url);
+                out.push('\nURL: ' + url);
 
-                console.log('--- INCOMING URL ---');
-                console.log(url);
-
-                if (!rawPage) {
-                    console.log('SEM HTML');
+                if (!rawPage || typeof rawPage !== 'string') {
+                    out.push('Sem HTML válido.');
                     continue;
                 }
 
                 const pageHtml = $.parseHTML(rawPage);
                 const tables = $(pageHtml).find('table');
 
-                console.log('TABLES ENCONTRADAS:', tables.length);
+                out.push('Tabelas encontradas: ' + tables.length);
 
                 tables.each((i, table) => {
-                    const text = ($(table).text() || '').trim().replace(/\s+/g, ' ').slice(0, 800);
-                    console.log(`INCOMING TABLE ${i}`, table.id || '(sem id)', table.className || '(sem class)');
-                    console.log(text);
+                    const text = this.#truncate(this.#cleanText($(table).text()), 1200);
+                    out.push(`\n[TABLE ${i}] id=${table.id || '(sem id)'} class=${table.className || '(sem class)'}`);
+                    out.push(text);
                 });
 
-                if (tables.length) {
-                    console.log('--- HTML PRIMEIRA TABELA INCOMING ---');
-                    console.log(tables.eq(0).prop('outerHTML'));
+                const firstTable = tables.first();
+                if (firstTable.length) {
+                    out.push('\nHTML primeira tabela:');
+                    out.push(this.#truncate(firstTable.prop('outerHTML'), 6000));
                     break;
                 }
             }
+
+            return out.join('\n');
         }
 
         async debugSnob() {
             const url = this.#generateUrl('snob');
             const rawPage = this.#fetchHtmlPage(url);
 
-            console.log('--- SNOB URL ---');
-            console.log(url);
+            let out = [];
+            out.push('### SNOB');
+            out.push('URL: ' + url);
 
-            if (!rawPage) {
-                console.log('SEM HTML DA ACADEMIA');
-                return;
+            if (!rawPage || typeof rawPage !== 'string') {
+                out.push('Sem HTML válido.');
+                return out.join('\n');
             }
-
-            const htmlText = typeof rawPage === 'string'
-                ? rawPage
-                : new XMLSerializer().serializeToString(rawPage);
-
-            console.log('--- TRECHO HTML SNOB (INÍCIO) ---');
-            console.log(htmlText.slice(0, 5000));
 
             const pageHtml = $.parseHTML(rawPage);
             const tables = $(pageHtml).find('table');
 
-            console.log('--- TABLES ENCONTRADAS NA ACADEMIA ---');
-            console.log('Quantidade:', tables.length);
+            out.push('Tabelas encontradas: ' + tables.length);
 
             tables.each((i, table) => {
-                const text = ($(table).text() || '').trim().replace(/\s+/g, ' ').slice(0, 800);
-                console.log(`SNOB TABLE ${i}`, table.id || '(sem id)', table.className || '(sem class)');
-                console.log(text);
+                const text = this.#truncate(this.#cleanText($(table).text()), 1200);
+                out.push(`\n[TABLE ${i}] id=${table.id || '(sem id)'} class=${table.className || '(sem class)'}`);
+                out.push(text);
+            });
+
+            out.push('\nINÍCIO DO HTML SNOB:');
+            out.push(this.#truncate(rawPage, 7000));
+
+            return out.join('\n');
+        }
+
+        showResult(text) {
+            const escaped = String(text)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+
+            const html = `
+                <div style="padding:12px;">
+                    <h3 style="margin:0 0 12px 0;">Debug Nobres</h3>
+                    <div style="margin-bottom:10px;">
+                        <button id="nc-copy-debug" style="padding:8px 12px;cursor:pointer;">Copiar debug</button>
+                    </div>
+                    <textarea id="nc-debug-text" style="width:100%;height:420px;box-sizing:border-box;font-family:monospace;">${escaped}</textarea>
+                </div>
+            `;
+
+            Dialog.show(DIALOG_ID, html);
+            $('#popup_box_' + DIALOG_ID).css('width', '980px');
+
+            $(document).off('click.' + SCRIPT_NS, '#nc-copy-debug');
+            $(document).on('click.' + SCRIPT_NS, '#nc-copy-debug', async () => {
+                const value = $('#nc-debug-text').val();
+                try {
+                    await navigator.clipboard.writeText(value);
+                    UI.SuccessMessage('Debug copiado!', 1500);
+                } catch (e) {
+                    UI.ErrorMessage('Não foi possível copiar o debug.');
+                }
             });
         }
     }
 
-    window.nobresCalculator = new NobresCalculator();
-    window.nobresCalculator.init();
+    window.nobresCalculatorDebug = new NobresCalculatorDebug();
+    window.nobresCalculatorDebug.init();
 })();
