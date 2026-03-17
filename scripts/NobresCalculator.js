@@ -16,6 +16,7 @@
                     loadingWorldConfig: 'A carregar configuração do mundo...',
                     loadingResources: 'A somar recursos de todas as aldeias...',
                     loadingSnob: 'A analisar academia...',
+                    loadingIncoming: 'A ler recursos a chegar...',
                     success: 'Calculado com sucesso!',
                     errorFetching: 'Erro ao carregar:',
                     premiumRequired: 'É necessário possuir conta premium para correr este script!',
@@ -26,6 +27,8 @@
                     calculate: 'Calcular',
                     copy: 'Copiar resumo',
                     totalResources: 'Recursos totais',
+                    incomingResources: 'Recursos a chegar',
+                    includeIncoming: 'Incluir recursos a chegar no cálculo',
                     costs: 'Custos usados',
                     results: 'Resultado',
                     nextNoble: 'Próximo nobre',
@@ -53,6 +56,7 @@
                     loadingWorldConfig: 'Loading world config...',
                     loadingResources: 'Summing resources from all villages...',
                     loadingSnob: 'Reading academy...',
+                    loadingIncoming: 'Reading incoming resources...',
                     success: 'Calculated successfully!',
                     errorFetching: 'Error while fetching:',
                     premiumRequired: 'A premium account is required to run this script!',
@@ -63,6 +67,8 @@
                     calculate: 'Calculate',
                     copy: 'Copy summary',
                     totalResources: 'Total resources',
+                    incomingResources: 'Incoming resources',
+                    includeIncoming: 'Include incoming resources in calculation',
                     costs: 'Costs used',
                     results: 'Results',
                     nextNoble: 'Next noble',
@@ -93,8 +99,8 @@
             this.worldConfigFileName = `worldConfigFile_${game_data.world}`;
             this.detectedData = null;
             this.totalResources = null;
+            this.incomingResources = { wood: 0, stone: 0, iron: 0 };
             this.settingsKey = `nobresCalculatorSettings_${game_data.world}_${game_data.player.id}`;
-            this.liveRecalcTimeout = null;
         }
 
         async init() {
@@ -147,6 +153,9 @@
 
             UI.InfoMessage(this.t.loadingSnob);
             this.detectedData = await this.#getSnobData();
+
+            UI.InfoMessage(this.t.loadingIncoming);
+            this.incomingResources = await this.#getIncomingResources();
         }
 
         async #waitMilliseconds(lastRunTime, milliseconds = 0) {
@@ -307,19 +316,25 @@
                 const possibleTables = [
                     $(pageHtml).find('#production_table'),
                     $(pageHtml).find('#combined_table'),
-                    $(pageHtml).find('table.vis').first()
+                    $(pageHtml).find('table.vis')
                 ];
 
                 let pageTotals = null;
 
-                for (const table of possibleTables) {
-                    if (table && table.length) {
-                        const extracted = this.#extractResourcesFromTable(table);
-                        if (extracted) {
-                            pageTotals = extracted;
-                            break;
-                        }
-                    }
+                for (const tableSet of possibleTables) {
+                    if (!tableSet || !tableSet.length) continue;
+
+                    tableSet.each((_, table) => {
+                        if (pageTotals) return;
+
+                        const extracted = this.#extractResourcesFromTable($(table));
+                        if (!extracted) return;
+
+                        const sum = extracted.wood + extracted.stone + extracted.iron;
+                        if (sum > 0) pageTotals = extracted;
+                    });
+
+                    if (pageTotals) break;
                 }
 
                 if (!pageTotals) break;
@@ -333,6 +348,70 @@
 
                 currentPage++;
                 await this.#waitMilliseconds(Date.now(), 200);
+            }
+
+            return totals;
+        }
+
+        async #getIncomingResources() {
+            const totals = { wood: 0, stone: 0, iron: 0 };
+
+            const possiblePages = [
+                this.#generateUrl('overview_villages', 'trader', { type: 'inc' }),
+                this.#generateUrl('overview_villages', 'trader'),
+                this.#generateUrl('market', 'traders')
+            ];
+
+            for (const url of possiblePages) {
+                const rawPage = this.#fetchHtmlPage(url);
+                if (!rawPage) continue;
+
+                const pageHtml = $.parseHTML(rawPage);
+                const tables = $(pageHtml).find('table.vis');
+
+                let foundSomething = false;
+
+                tables.each((_, table) => {
+                    const tableText = ($(table).text() || '').toLowerCase();
+
+                    const looksRelevant =
+                        tableText.includes('holz') ||
+                        tableText.includes('lehm') ||
+                        tableText.includes('eisen') ||
+                        tableText.includes('madeira') ||
+                        tableText.includes('barro') ||
+                        tableText.includes('ferro') ||
+                        tableText.includes('wood') ||
+                        tableText.includes('clay') ||
+                        tableText.includes('iron');
+
+                    if (!looksRelevant) return;
+
+                    $(table).find('tbody tr').each((__, row) => {
+                        let wood = 0;
+                        let stone = 0;
+                        let iron = 0;
+
+                        $(row).find('td').each((___, cell) => {
+                            const cellText = $(cell).text() || '';
+                            const cellValue = this.#parseNumber(cellText);
+                            const cellHtml = ($(cell).html() || '').toLowerCase();
+
+                            if (cellHtml.includes('holz')) wood += cellValue;
+                            if (cellHtml.includes('lehm')) stone += cellValue;
+                            if (cellHtml.includes('eisen')) iron += cellValue;
+                        });
+
+                        if (wood || stone || iron) {
+                            totals.wood += wood;
+                            totals.stone += stone;
+                            totals.iron += iron;
+                            foundSomething = true;
+                        }
+                    });
+                });
+
+                if (foundSomething) return totals;
             }
 
             return totals;
@@ -394,7 +473,8 @@
                 snobCost: baseSnobCost,
                 nextNobleCoins: typeof saved.nextNobleCoins === 'number' ? saved.nextNobleCoins : nextNobleCoins,
                 existingCoins: typeof saved.existingCoins === 'number' ? saved.existingCoins : existingCoins,
-                discount: typeof saved.discount === 'number' ? saved.discount : 0
+                discount: typeof saved.discount === 'number' ? saved.discount : 0,
+                includeIncoming: typeof saved.includeIncoming === 'boolean' ? saved.includeIncoming : true
             };
         }
 
@@ -498,6 +578,7 @@
                 `${this.t.nextNoble}: ${plan.nextCoinsNeeded} ${this.t.coins}`,
                 `${this.t.discount}: ${detected.discount}%`,
                 `${this.t.existingCoins}: ${detected.existingCoins || 0}`,
+                `${this.t.includeIncoming}: ${detected.includeIncoming ? 'Sim' : 'Não'}`,
                 '',
                 `${this.t.nextCost}:`,
                 `${this.t.wood}: ${this.#formatNumber(plan.nextCost.wood)}`,
@@ -513,8 +594,15 @@
 
         async #createUI() {
             const detected = this.detectedData;
+
+            const effectiveResources = {
+                wood: this.totalResources.wood + (detected.includeIncoming ? this.incomingResources.wood : 0),
+                stone: this.totalResources.stone + (detected.includeIncoming ? this.incomingResources.stone : 0),
+                iron: this.totalResources.iron + (detected.includeIncoming ? this.incomingResources.iron : 0)
+            };
+
             const plan = this.#calculatePlan(
-                this.totalResources,
+                effectiveResources,
                 detected.coinCost,
                 detected.snobCost,
                 detected.nextNobleCoins,
@@ -573,6 +661,20 @@
                     ${renderResourceCard('wood', this.totalResources.wood, t.wood)}
                     ${renderResourceCard('stone', this.totalResources.stone, t.stone)}
                     ${renderResourceCard('iron', this.totalResources.iron, t.iron)}
+                </div>
+
+                <div class="nc-subpanel">
+                    <div class="nc-cost-title">${t.incomingResources}</div>
+                    <div class="nc-resource-grid">
+                        ${renderResourceCard('wood', this.incomingResources.wood, t.wood)}
+                        ${renderResourceCard('stone', this.incomingResources.stone, t.stone)}
+                        ${renderResourceCard('iron', this.incomingResources.iron, t.iron)}
+                    </div>
+
+                    <label class="nc-check-row">
+                        <input id="nc-include-incoming" type="checkbox" ${detected.includeIncoming ? 'checked' : ''}>
+                        <span>${t.includeIncoming}</span>
+                    </label>
                 </div>
             </div>
 
@@ -948,6 +1050,26 @@
     font-size: 11px;
 }
 
+#nc-root .nc-subpanel {
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px solid rgba(255,255,255,.08);
+}
+
+#nc-root .nc-check-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 12px;
+    color: #eadcc0;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+#nc-root .nc-check-row input[type="checkbox"] {
+    transform: scale(1.1);
+}
+
 @media (max-width: 980px) {
     .popup_box_content {
         min-width: unset;
@@ -976,21 +1098,46 @@
             Dialog.show(DIALOG_ID, html, Dialog.close());
             $('#popup_box_' + DIALOG_ID).css('width', 'unset');
 
-            const scheduleLiveRecalc = () => {
-                clearTimeout(this.liveRecalcTimeout);
-                this.liveRecalcTimeout = setTimeout(async () => {
-                    const nextNobleCoins = parseInt($('#nc-next-noble').val(), 10) || 1;
-                    const discount = parseFloat($('#nc-discount').val()) || 0;
-                    const existingCoins = parseInt($('#nc-existing-coins').val(), 10) || 0;
+            const applyFormValues = async () => {
+                const nextNobleCoins = parseInt($('#nc-next-noble').val(), 10) || 1;
+                const discount = parseFloat($('#nc-discount').val()) || 0;
+                const existingCoins = parseInt($('#nc-existing-coins').val(), 10) || 0;
+                const includeIncoming = $('#nc-include-incoming').is(':checked');
 
-                    this.detectedData.nextNobleCoins = nextNobleCoins;
-                    this.detectedData.discount = discount;
-                    this.detectedData.existingCoins = existingCoins;
+                this.detectedData.nextNobleCoins = nextNobleCoins;
+                this.detectedData.discount = discount;
+                this.detectedData.existingCoins = existingCoins;
+                this.detectedData.includeIncoming = includeIncoming;
 
-                    this.#saveSettings({ nextNobleCoins, discount, existingCoins });
-                    await this.#createUI();
-                }, 120);
+                this.#saveSettings({
+                    nextNobleCoins,
+                    discount,
+                    existingCoins,
+                    includeIncoming
+                });
+
+                await this.#createUI();
             };
+
+            const bindApplyOnBlurOrEnter = (selector) => {
+                $(document).off('blur.' + SCRIPT_NS, selector);
+                $(document).on('blur.' + SCRIPT_NS, selector, applyFormValues);
+
+                $(document).off('keydown.' + SCRIPT_NS, selector);
+                $(document).on('keydown.' + SCRIPT_NS, selector, async (e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        await applyFormValues();
+                    }
+                });
+            };
+
+            bindApplyOnBlurOrEnter('#nc-next-noble');
+            bindApplyOnBlurOrEnter('#nc-discount');
+            bindApplyOnBlurOrEnter('#nc-existing-coins');
+
+            $(document).off('change.' + SCRIPT_NS, '#nc-include-incoming');
+            $(document).on('change.' + SCRIPT_NS, '#nc-include-incoming', applyFormValues);
 
             $(document).off('click.' + SCRIPT_NS, '#nc-refresh');
             $(document).on('click.' + SCRIPT_NS, '#nc-refresh', async () => {
@@ -1000,36 +1147,23 @@
             });
 
             $(document).off('click.' + SCRIPT_NS, '#nc-recalc');
-            $(document).on('click.' + SCRIPT_NS, '#nc-recalc', async () => {
-                const nextNobleCoins = parseInt($('#nc-next-noble').val(), 10) || 1;
-                const discount = parseFloat($('#nc-discount').val()) || 0;
-                const existingCoins = parseInt($('#nc-existing-coins').val(), 10) || 0;
-
-                this.detectedData.nextNobleCoins = nextNobleCoins;
-                this.detectedData.discount = discount;
-                this.detectedData.existingCoins = existingCoins;
-
-                this.#saveSettings({ nextNobleCoins, discount, existingCoins });
-                await this.#createUI();
-            });
-
-            $(document).off('input.' + SCRIPT_NS, '#nc-next-noble');
-            $(document).on('input.' + SCRIPT_NS, '#nc-next-noble', scheduleLiveRecalc);
-
-            $(document).off('input.' + SCRIPT_NS, '#nc-discount');
-            $(document).on('input.' + SCRIPT_NS, '#nc-discount', scheduleLiveRecalc);
-
-            $(document).off('input.' + SCRIPT_NS, '#nc-existing-coins');
-            $(document).on('input.' + SCRIPT_NS, '#nc-existing-coins', scheduleLiveRecalc);
+            $(document).on('click.' + SCRIPT_NS, '#nc-recalc', applyFormValues);
 
             $(document).off('click.' + SCRIPT_NS, '#nc-copy-summary');
             $(document).on('click.' + SCRIPT_NS, '#nc-copy-summary', async () => {
                 const nextNobleCoins = parseInt($('#nc-next-noble').val(), 10) || 1;
                 const discount = parseFloat($('#nc-discount').val()) || 0;
                 const existingCoins = parseInt($('#nc-existing-coins').val(), 10) || 0;
+                const includeIncoming = $('#nc-include-incoming').is(':checked');
+
+                const currentResources = {
+                    wood: this.totalResources.wood + (includeIncoming ? this.incomingResources.wood : 0),
+                    stone: this.totalResources.stone + (includeIncoming ? this.incomingResources.stone : 0),
+                    iron: this.totalResources.iron + (includeIncoming ? this.incomingResources.iron : 0)
+                };
 
                 const currentPlan = this.#calculatePlan(
-                    this.totalResources,
+                    currentResources,
                     this.detectedData.coinCost,
                     this.detectedData.snobCost,
                     nextNobleCoins,
@@ -1040,7 +1174,8 @@
                 const summary = this.#buildSummaryText(currentPlan, {
                     nextNobleCoins,
                     discount,
-                    existingCoins
+                    existingCoins,
+                    includeIncoming
                 });
 
                 try {
