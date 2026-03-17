@@ -401,12 +401,18 @@
         #calculateNukeStatusByVillageArray(villagesArray) {
             const status = { full: 0, semi: 0, rebuilding: 0 };
 
-            villagesArray.forEach(v => {
-                const pop = this.#calculateOffensivePop(v);
-                if (pop >= 19000) status.full++;
-                else if (pop >= 10000) status.semi++;
-                else if (pop >= 2000) status.rebuilding++;
-            });
+         villagesArray.forEach(v => {
+    const pop = this.#calculateOffensivePop(v);
+    const axes = v.axe || 0;
+
+    if (pop >= 20000 && axes > 500) {
+        status.full++;
+    } else if (pop >= 16000 && pop < 20000 && axes > 500) {
+        status.semi++;
+    } else if (pop < 16000 && axes > 500) {
+        status.rebuilding++;
+    }
+});
 
             return status;
         }
