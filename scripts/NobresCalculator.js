@@ -1,6 +1,6 @@
 (function () {
-    const SCRIPT_NS = 'nobres_brown_final';
-    const DIALOG_ID = 'nobres_calculator_brown_dialog';
+    const SCRIPT_NS = 'nobres_clean_modern_v1';
+    const DIALOG_ID = 'nobres_clean_modern_dialog';
 
     try { $(document).off('.' + SCRIPT_NS); } catch (e) {}
     try { Dialog.close(); } catch (e) {}
@@ -16,10 +16,10 @@
             this.coinCostBase = { wood: 28000, stone: 30000, iron: 25000 };
             this.snobCost = { wood: 40000, stone: 50000, iron: 50000 };
 
-            this.snob = {
-                total: 0,
-                saved: 0,
-                missing: 25
+            this.academy = {
+                totalMinted: 0,
+                savedCoins: 0,
+                missingCoins: 25
             };
         }
 
@@ -33,9 +33,15 @@
         buildUrl(screen, mode = null, extraParams = {}) {
             let url = `/game.php?village=${game_data.village.id}&screen=${screen}`;
             if (mode) url += `&mode=${mode}`;
+
             Object.entries(extraParams).forEach(([k, v]) => {
                 url += `&${k}=${encodeURIComponent(v)}`;
             });
+
+            if (game_data.player.sitter !== "0") {
+                url += `&t=${game_data.player.id}`;
+            }
+
             return url;
         }
 
@@ -49,17 +55,11 @@
         }
 
         parseNumber(text) {
-            return parseInt(String(text).replace(/[^\d]/g, ''), 10) || 0;
+            return parseInt(String(text || '').replace(/[^\d]/g, ''), 10) || 0;
         }
 
         format(n) {
-            return new Intl.NumberFormat('pt-PT').format(Math.floor(n || 0));
-        }
-
-        addRes(target, src) {
-            target.wood += src.wood || 0;
-            target.stone += src.stone || 0;
-            target.iron += src.iron || 0;
+            return new Intl.NumberFormat('pt-PT').format(Number(n || 0));
         }
 
         sumRes(...items) {
@@ -78,25 +78,22 @@
             };
         }
 
-        mulRes(a, n) {
-            return {
-                wood: (a.wood || 0) * n,
-                stone: (a.stone || 0) * n,
-                iron: (a.iron || 0) * n
-            };
+        addRes(target, src) {
+            target.wood += src.wood || 0;
+            target.stone += src.stone || 0;
+            target.iron += src.iron || 0;
         }
 
         async loadData() {
             await this.getVillageResources();
             await this.getTransitResources();
-            await this.getSnobData();
+            await this.getAcademyData();
         }
 
         async getVillageResources() {
             const html = await this.fetchPage(this.buildUrl('overview_villages', 'prod'));
             const dom = $.parseHTML(html);
             const rows = $(dom).find('#production_table tbody tr');
-
             const total = { wood: 0, stone: 0, iron: 0 };
 
             rows.each((_, row) => {
@@ -108,8 +105,8 @@
                 let iron = this.parseNumber(cell.find('.iron').first().text());
 
                 if (!wood && !stone && !iron) {
-                    const text = cell.text().replace(/\s+/g, ' ').trim();
-                    const nums = text.match(/\d[\d\.\s]*/g) || [];
+                    const txt = cell.text().replace(/\s+/g, ' ').trim();
+                    const nums = txt.match(/\d[\d.\s]*/g) || [];
                     if (nums.length >= 3) {
                         wood = this.parseNumber(nums[0]);
                         stone = this.parseNumber(nums[1]);
@@ -125,26 +122,14 @@
             this.resources.villages = total;
         }
 
-        extractResourcesFromTraderRow($row) {
-            let wood = 0, stone = 0, iron = 0;
-
-            const iconWood = $row.find('.wood').last().text();
-            const iconStone = $row.find('.stone').last().text();
-            const iconIron = $row.find('.iron').last().text();
-
-            wood = this.parseNumber(iconWood);
-            stone = this.parseNumber(iconStone);
-            iron = this.parseNumber(iconIron);
+        extractTraderRow($row) {
+            let wood = this.parseNumber($row.find('.wood').last().text());
+            let stone = this.parseNumber($row.find('.stone').last().text());
+            let iron = this.parseNumber($row.find('.iron').last().text());
 
             if (!wood && !stone && !iron) {
-                const tds = $row.find('td');
-                let combined = '';
-                tds.each((_, td) => {
-                    combined += ' ' + $(td).text();
-                });
-                combined = combined.replace(/\s+/g, ' ').trim();
-
-                const nums = combined.match(/\d[\d\.\s]*/g) || [];
+                const txt = $row.text().replace(/\s+/g, ' ').trim();
+                const nums = txt.match(/\d[\d.\s]*/g) || [];
                 if (nums.length >= 3) {
                     const last3 = nums.slice(-3);
                     wood = this.parseNumber(last3[0]);
@@ -162,8 +147,7 @@
             const total = { wood: 0, stone: 0, iron: 0 };
 
             rows.each((_, row) => {
-                const res = this.extractResourcesFromTraderRow($(row));
-                this.addRes(total, res);
+                this.addRes(total, this.extractTraderRow($(row)));
             });
 
             return total;
@@ -177,7 +161,7 @@
             this.resources.externalIncoming = this.parseTraderPage(incHtml);
         }
 
-        async getSnobData() {
+        async getAcademyData() {
             const html = await this.fetchPage(this.buildUrl('snob'));
             const text = $('<div>').html(html).text().replace(/\s+/g, ' ').trim();
 
@@ -189,27 +173,73 @@
                 text.match(/Já poupado.*?(\d+)/i) ||
                 text.match(/Poupadas?.*?(\d+)/i) ||
                 text.match(/Guardadas?.*?(\d+)/i) ||
-                text.match(/Coins?.*?saved.*?(\d+)/i);
+                text.match(/Armazenadas?.*?(\d+)/i);
 
             const missingMatch =
                 text.match(/Faltam\s*:?\s*(\d+)/i) ||
-                text.match(/faltam.*?(\d+)/i) ||
                 text.match(/Moedas em falta.*?(\d+)/i);
 
-            this.snob.total = totalMatch ? parseInt(totalMatch[1], 10) : 0;
-            this.snob.saved = savedMatch ? parseInt(savedMatch[1], 10) : 0;
-            this.snob.missing = missingMatch ? parseInt(missingMatch[1], 10) : Math.max(0, 25 - this.snob.saved);
+            this.academy.totalMinted = totalMatch ? parseInt(totalMatch[1], 10) : 0;
+            this.academy.savedCoins = savedMatch ? parseInt(savedMatch[1], 10) : (this.academy.totalMinted % 25);
+            this.academy.missingCoins = missingMatch
+                ? parseInt(missingMatch[1], 10)
+                : ((25 - (this.academy.savedCoins % 25)) % 25);
+        }
 
-            if (this.snob.saved > 25) {
-                this.snob.missing = this.snob.saved % 25 === 0 ? 0 : 25 - (this.snob.saved % 25);
+        getCurrentGroupName() {
+            try {
+                const html = $.parseHTML(
+                    this.syncFetch(this.buildUrl('overview_villages', 'groups', { type: 'static' }))
+                );
+
+                let groupName = 'Todos';
+
+                const groups = $(html).find('.vis_item').find('a,strong');
+                if ($(groups).length > 0) {
+                    $.each(groups, function (_, group) {
+                        if (String(group.getAttribute('data-group-id')) === String(game_data.group_id)) {
+                            const val = $(group).text().trim();
+                            groupName = val.substring(1, val.length - 1);
+                        }
+                    });
+                }
+
+                return groupName || 'Todos';
+            } catch (e) {
+                return 'Todos';
             }
         }
 
+        syncFetch(url) {
+            let temp = '';
+            $.ajax({
+                url: url,
+                async: false,
+                success: function (data) { temp = data; }
+            });
+            return temp;
+        }
+
         getMintDiscount() {
-            const raw = $('#nobres_discount_input').val();
-            const val = parseFloat(String(raw).replace(',', '.'));
-            if (isNaN(val)) return 0;
-            return Math.max(0, Math.min(100, val));
+            const raw = $('#nc_discount').val();
+            const val = parseFloat(String(raw || '0').replace(',', '.'));
+            return isNaN(val) ? 0 : Math.max(0, Math.min(100, val));
+        }
+
+        getManualSavedCoins() {
+            const raw = $('#nc_saved').val();
+            const val = this.parseNumber(raw);
+            return Math.max(0, val);
+        }
+
+        getManualMintedCoins() {
+            const raw = $('#nc_minted').val();
+            const val = this.parseNumber(raw);
+            return Math.max(0, val);
+        }
+
+        includeIncoming() {
+            return $('#nc_include_incoming').is(':checked');
         }
 
         getDiscountedCoinCost() {
@@ -222,7 +252,6 @@
         }
 
         calcCoinsFromResources(res, coinCost) {
-            if (!coinCost.wood || !coinCost.stone || !coinCost.iron) return 0;
             return Math.floor(Math.min(
                 (res.wood || 0) / coinCost.wood,
                 (res.stone || 0) / coinCost.stone,
@@ -232,35 +261,33 @@
 
         calcMaxNoblesFromResources(res, savedCoins, coinCost) {
             let nobles = 0;
-            let current = { wood: res.wood, stone: res.stone, iron: res.iron };
-            let coinsSaved = savedCoins;
+            let current = { ...res };
+            let saved = savedCoins;
 
             while (true) {
-                const missingCoins = Math.max(0, 25 - coinsSaved);
+                const missing = Math.max(0, 25 - (saved % 25 || 0));
+                const missingCoins = saved > 0 ? (saved % 25 === 0 ? 0 : missing) : 25;
 
-                const need = {
+                const cost = {
                     wood: this.snobCost.wood + (coinCost.wood * missingCoins),
                     stone: this.snobCost.stone + (coinCost.stone * missingCoins),
                     iron: this.snobCost.iron + (coinCost.iron * missingCoins)
                 };
 
                 if (
-                    current.wood >= need.wood &&
-                    current.stone >= need.stone &&
-                    current.iron >= need.iron
+                    current.wood >= cost.wood &&
+                    current.stone >= cost.stone &&
+                    current.iron >= cost.iron
                 ) {
-                    current = this.subRes(current, need);
+                    current = this.subRes(current, cost);
                     nobles++;
-                    coinsSaved = 0;
+                    saved = 0;
                 } else {
                     break;
                 }
             }
 
-            return {
-                nobles,
-                remaining: current
-            };
+            return { nobles, remaining: current };
         }
 
         calc() {
@@ -269,448 +296,528 @@
             const externalIncoming = this.resources.externalIncoming;
 
             const totalOwn = this.sumRes(villages, ownTransit);
-            const totalAll = this.sumRes(villages, ownTransit, externalIncoming);
+            const totalWithIncoming = this.sumRes(villages, ownTransit, externalIncoming);
+            const usableTotal = this.includeIncoming() ? totalWithIncoming : totalOwn;
 
+            const savedCoins = this.getManualSavedCoins();
+            const mintedCoins = this.getManualMintedCoins();
             const coinCost = this.getDiscountedCoinCost();
 
-            const coinsPossibleOwn = this.calcCoinsFromResources(totalOwn, coinCost);
-            const coinsPossibleAll = this.calcCoinsFromResources(totalAll, coinCost);
-
-            const maxOwn = this.calcMaxNoblesFromResources(totalOwn, this.snob.saved, coinCost);
-            const maxAll = this.calcMaxNoblesFromResources(totalAll, this.snob.saved, coinCost);
-
-            const missingCoinsNext = Math.max(0, 25 - this.snob.saved);
+            const missingCoins = savedCoins > 0
+                ? (savedCoins % 25 === 0 ? 0 : 25 - (savedCoins % 25))
+                : 25;
 
             const nextNobleCost = {
-                wood: this.snobCost.wood + (coinCost.wood * missingCoinsNext),
-                stone: this.snobCost.stone + (coinCost.stone * missingCoinsNext),
-                iron: this.snobCost.iron + (coinCost.iron * missingCoinsNext)
+                wood: this.snobCost.wood + (coinCost.wood * missingCoins),
+                stone: this.snobCost.stone + (coinCost.stone * missingCoins),
+                iron: this.snobCost.iron + (coinCost.iron * missingCoins)
             };
 
-            const canMakeNextNow =
-                totalAll.wood >= nextNobleCost.wood &&
-                totalAll.stone >= nextNobleCost.stone &&
-                totalAll.iron >= nextNobleCost.iron;
+            const coinsPossible = this.calcCoinsFromResources(usableTotal, coinCost);
+            const max = this.calcMaxNoblesFromResources(usableTotal, savedCoins, coinCost);
 
             return {
                 villages,
                 ownTransit,
                 externalIncoming,
                 totalOwn,
-                totalAll,
+                totalWithIncoming,
+                usableTotal,
+                savedCoins,
+                mintedCoins,
                 coinCost,
-                coinsPossibleOwn,
-                coinsPossibleAll,
-                maxOwn,
-                maxAll,
+                missingCoins,
                 nextNobleCost,
-                canMakeNextNow,
-                savedCoins: this.snob.saved,
-                totalCoinsScreen: this.snob.total,
-                missingCoinsScreen: this.snob.missing
+                coinsPossible,
+                noblesPossible: max.nobles,
+                remaining: max.remaining
             };
         }
 
+        resourceRows(res) {
+            return `
+                <div class="nc-line"><span>Madeira</span><b>${this.format(res.wood)}</b></div>
+                <div class="nc-line"><span>Barro</span><b>${this.format(res.stone)}</b></div>
+                <div class="nc-line"><span>Ferro</span><b>${this.format(res.iron)}</b></div>
+            `;
+        }
+
         createUI() {
+            const currentGroup = this.getCurrentGroupName();
+            const playerName = game_data.player.name;
+            const worldName = game_data.world;
+
             const html = `
-<div id="nobres_calc_root" class="ncalc-root">
-    <div class="ncalc-header">
-        <div class="ncalc-title">Calculadora de Nobres</div>
-        <div class="ncalc-subtitle">Recursos nas aldeias, em trânsito, cunhagem com desconto e nobres possíveis</div>
-    </div>
-
-    <div class="ncalc-grid top">
-        <div class="ncalc-card">
-            <div class="ncalc-card-title">Opções</div>
-            <div class="ncalc-field">
-                <label class="ncalc-label">Desconto da cunhagem (%)</label>
-                <input id="nobres_discount_input" class="ncalc-input" type="number" min="0" max="100" step="0.1" value="0">
+<div id="nc-root">
+    <div class="nc-shell">
+        <div class="nc-header">
+            <div>
+                <div class="nc-kicker">Tribal Wars</div>
+                <h3>Calculadora de Nobres</h3>
+                <div class="nc-sub">Recursos, moedas e próximos nobres</div>
             </div>
-            <div class="ncalc-hint">
-                Exemplo: 35 = moedas 35% mais baratas.<br>
-                O desconto só afeta a cunhagem das moedas.
+            <div class="nc-stamp">${playerName}</div>
+        </div>
+
+        <div class="nc-topbar">
+            <div class="nc-meta">
+                <div class="nc-pill"><span>Grupo</span><strong>${currentGroup}</strong></div>
+                <div class="nc-pill"><span>Jogador</span><strong>${playerName}</strong></div>
+                <div class="nc-pill"><span>Mundo</span><strong>${worldName}</strong></div>
             </div>
-        </div>
-
-        <div class="ncalc-card">
-            <div class="ncalc-card-title">Moedas da academia</div>
-            <div class="ncalc-stat-row"><span>Total lido</span><b id="ncalc_snob_total">-</b></div>
-            <div class="ncalc-stat-row"><span>Poupadas</span><b id="ncalc_snob_saved">-</b></div>
-            <div class="ncalc-stat-row"><span>Faltam p/ próximo</span><b id="ncalc_snob_missing">-</b></div>
-        </div>
-
-        <div class="ncalc-card">
-            <div class="ncalc-card-title">Custo da moeda com desconto</div>
-            <div class="ncalc-stat-row"><span>Madeira</span><b id="ncalc_coin_wood">-</b></div>
-            <div class="ncalc-stat-row"><span>Barro</span><b id="ncalc_coin_stone">-</b></div>
-            <div class="ncalc-stat-row"><span>Ferro</span><b id="ncalc_coin_iron">-</b></div>
-        </div>
-    </div>
-
-    <div class="ncalc-grid mid">
-        <div class="ncalc-card">
-            <div class="ncalc-card-title">Recursos base</div>
-            <div class="ncalc-stat-row"><span>Nas aldeias</span><b id="ncalc_villages_sum">-</b></div>
-            <div class="ncalc-stat-row"><span>Teus em trânsito</span><b id="ncalc_own_sum">-</b></div>
-            <div class="ncalc-stat-row"><span>Externos a chegar</span><b id="ncalc_inc_sum">-</b></div>
-        </div>
-
-        <div class="ncalc-card">
-            <div class="ncalc-card-title">Totais usados</div>
-            <div class="ncalc-stat-row"><span>Total teu real</span><b id="ncalc_total_own_sum">-</b></div>
-            <div class="ncalc-stat-row"><span>Total geral</span><b id="ncalc_total_all_sum">-</b></div>
-            <div class="ncalc-hint">
-                Total teu real = aldeias + trânsito teu<br>
-                Total geral = total teu real + recursos externos a chegar
+            <div class="nc-actions">
+                <button id="nc-refresh" class="nc-btn nc-btn-secondary">Atualizar</button>
+                <button id="nc-copy" class="nc-btn nc-btn-primary">Copiar resumo</button>
             </div>
         </div>
 
-        <div class="ncalc-card">
-            <div class="ncalc-card-title">Custo do próximo nobre</div>
-            <div class="ncalc-stat-row"><span>Madeira</span><b id="ncalc_next_wood">-</b></div>
-            <div class="ncalc-stat-row"><span>Barro</span><b id="ncalc_next_stone">-</b></div>
-            <div class="ncalc-stat-row"><span>Ferro</span><b id="ncalc_next_iron">-</b></div>
-        </div>
-    </div>
-
-    <div class="ncalc-grid result">
-        <div class="ncalc-card big">
-            <div class="ncalc-card-title">Resultado com total teu real</div>
-            <div class="ncalc-big-row">
-                <div class="ncalc-big-box">
-                    <div class="ncalc-big-label">Moedas possíveis</div>
-                    <div class="ncalc-big-value" id="ncalc_coins_own">-</div>
+        <div class="nc-grid">
+            <div class="nc-panel">
+                <div class="nc-panel-head">
+                    <h4>Recursos</h4>
                 </div>
-                <div class="ncalc-big-box">
-                    <div class="ncalc-big-label">Nobres possíveis</div>
-                    <div class="ncalc-big-value" id="ncalc_nobles_own">-</div>
+
+                <div class="nc-mini-grid">
+                    <div class="nc-stat-card">
+                        <div class="nc-stat-title">Nas aldeias</div>
+                        <div id="nc_villages_detail"></div>
+                    </div>
+
+                    <div class="nc-stat-card">
+                        <div class="nc-stat-title">Teus em trânsito</div>
+                        <div id="nc_own_detail"></div>
+                    </div>
+
+                    <div class="nc-stat-card">
+                        <div class="nc-stat-title">Externos a chegar</div>
+                        <div id="nc_inc_detail"></div>
+                    </div>
+                </div>
+
+                <div class="nc-check">
+                    <label>
+                        <input type="checkbox" id="nc_include_incoming" checked>
+                        Incluir recursos a chegar no cálculo
+                    </label>
+                </div>
+            </div>
+
+            <div class="nc-panel">
+                <div class="nc-panel-head">
+                    <h4>Academia e custos</h4>
+                </div>
+
+                <div class="nc-form">
+                    <div class="nc-field">
+                        <label>Moedas poupadas p/ próximo nobre</label>
+                        <input id="nc_saved" type="text" value="${this.academy.savedCoins}">
+                    </div>
+
+                    <div class="nc-field">
+                        <label>Moedas já cunhadas</label>
+                        <input id="nc_minted" type="text" value="${this.academy.totalMinted}">
+                    </div>
+
+                    <div class="nc-field">
+                        <label>Desconto moeda (%)</label>
+                        <input id="nc_discount" type="text" value="0">
+                    </div>
+                </div>
+
+                <div class="nc-box">
+                    <div class="nc-box-title">Custo da moeda</div>
+                    <div class="nc-line"><span>Madeira</span><b id="nc_coin_wood">-</b></div>
+                    <div class="nc-line"><span>Barro</span><b id="nc_coin_stone">-</b></div>
+                    <div class="nc-line"><span>Ferro</span><b id="nc_coin_iron">-</b></div>
+                </div>
+
+                <div class="nc-box">
+                    <div class="nc-box-title">Custo do próximo nobre</div>
+                    <div class="nc-line"><span>Madeira</span><b id="nc_next_wood">-</b></div>
+                    <div class="nc-line"><span>Barro</span><b id="nc_next_stone">-</b></div>
+                    <div class="nc-line"><span>Ferro</span><b id="nc_next_iron">-</b></div>
                 </div>
             </div>
         </div>
 
-        <div class="ncalc-card big">
-            <div class="ncalc-card-title">Resultado com total geral</div>
-            <div class="ncalc-big-row">
-                <div class="ncalc-big-box">
-                    <div class="ncalc-big-label">Moedas possíveis</div>
-                    <div class="ncalc-big-value" id="ncalc_coins_all">-</div>
-                </div>
-                <div class="ncalc-big-box">
-                    <div class="ncalc-big-label">Nobres possíveis</div>
-                    <div class="ncalc-big-value" id="ncalc_nobles_all">-</div>
-                </div>
+        <div class="nc-results">
+            <div class="nc-result-card">
+                <div class="nc-result-label">Moedas possíveis</div>
+                <div class="nc-result-value" id="nc_result_coins">-</div>
+            </div>
+
+            <div class="nc-result-card">
+                <div class="nc-result-label">Nobres possíveis</div>
+                <div class="nc-result-value" id="nc_result_nobles">-</div>
+            </div>
+
+            <div class="nc-result-card">
+                <div class="nc-result-label">Moedas em falta p/ próximo</div>
+                <div class="nc-result-value" id="nc_result_missing">-</div>
             </div>
         </div>
-    </div>
 
-    <div class="ncalc-grid bottom">
-        <div class="ncalc-card">
-            <div class="ncalc-card-title">Recursos sobrantes após máximo de nobres (total teu real)</div>
-            <div class="ncalc-stat-row"><span>Madeira</span><b id="ncalc_left_own_wood">-</b></div>
-            <div class="ncalc-stat-row"><span>Barro</span><b id="ncalc_left_own_stone">-</b></div>
-            <div class="ncalc-stat-row"><span>Ferro</span><b id="ncalc_left_own_iron">-</b></div>
-        </div>
+        <div class="nc-grid nc-grid-bottom">
+            <div class="nc-panel">
+                <div class="nc-panel-head">
+                    <h4>Total usado no cálculo</h4>
+                </div>
+                <div id="nc_usable_detail"></div>
+            </div>
 
-        <div class="ncalc-card">
-            <div class="ncalc-card-title">Recursos sobrantes após máximo de nobres (total geral)</div>
-            <div class="ncalc-stat-row"><span>Madeira</span><b id="ncalc_left_all_wood">-</b></div>
-            <div class="ncalc-stat-row"><span>Barro</span><b id="ncalc_left_all_stone">-</b></div>
-            <div class="ncalc-stat-row"><span>Ferro</span><b id="ncalc_left_all_iron">-</b></div>
-        </div>
-
-        <div class="ncalc-card">
-            <div class="ncalc-card-title">Detalhe dos recursos</div>
-            <div class="ncalc-resource-grid">
-                <div class="ncalc-res-box">
-                    <div class="ncalc-res-title">Aldeias</div>
-                    <div id="ncalc_villages_detail">-</div>
+            <div class="nc-panel">
+                <div class="nc-panel-head">
+                    <h4>Recursos sobrantes</h4>
                 </div>
-                <div class="ncalc-res-box">
-                    <div class="ncalc-res-title">Teus em trânsito</div>
-                    <div id="ncalc_own_detail">-</div>
-                </div>
-                <div class="ncalc-res-box">
-                    <div class="ncalc-res-title">Externos a chegar</div>
-                    <div id="ncalc_inc_detail">-</div>
-                </div>
+                <div id="nc_remaining_detail"></div>
             </div>
         </div>
+
+        <div class="nc-footer">Calculadora de Nobres by JDi4s</div>
     </div>
 </div>
 
 <style>
-#popup_box_${DIALOG_ID} {
-    width: 980px !important;
-    max-width: 98vw !important;
-}
-
+#popup_box_${DIALOG_ID} { width: unset !important; }
 #popup_box_${DIALOG_ID} .popup_box_content {
-    background:
-        linear-gradient(180deg, #2a140a 0%, #1c0d06 100%) !important;
-    color: #f5e6c8 !important;
-    border: 1px solid #8a5a24 !important;
-    border-radius: 14px !important;
-    box-shadow: inset 0 0 0 1px rgba(255, 196, 120, 0.08), 0 10px 30px rgba(0,0,0,0.45) !important;
-    padding: 14px !important;
-    max-height: 88vh !important;
-    overflow-y: auto !important;
+    min-width: 960px;
+    background: transparent !important;
+}
+.mds #popup_box_${DIALOG_ID} .popup_box_content { min-width: unset !important; }
+
+#nc-root {
+    color: #f3e9d2;
+    font-family: Arial, sans-serif;
 }
 
-#popup_box_${DIALOG_ID} .popup_box_content a,
-#popup_box_${DIALOG_ID} .popup_box_content b,
-#popup_box_${DIALOG_ID} .popup_box_content strong {
-    color: #fff1d6 !important;
-}
-
-#nobres_calc_root.ncalc-root {
-    color: #f5e6c8;
-    font-family: Arial, Helvetica, sans-serif;
-}
-
-.ncalc-header {
-    margin-bottom: 14px;
-    padding: 12px 14px;
-    border: 1px solid #8c5b25;
-    border-radius: 16px;
-    background: linear-gradient(180deg, rgba(95,47,18,0.35), rgba(47,20,8,0.45));
-}
-
-.ncalc-title {
-    font-size: 28px;
-    font-weight: 700;
-    color: #fff2d7;
-    margin-bottom: 4px;
-}
-
-.ncalc-subtitle {
-    font-size: 13px;
-    color: #d8b88a;
-}
-
-.ncalc-grid {
-    display: grid;
-    gap: 14px;
-    margin-bottom: 14px;
-}
-
-.ncalc-grid.top,
-.ncalc-grid.mid,
-.ncalc-grid.bottom {
-    grid-template-columns: repeat(3, 1fr);
-}
-
-.ncalc-grid.result {
-    grid-template-columns: repeat(2, 1fr);
-}
-
-.ncalc-card {
-    background: linear-gradient(180deg, rgba(74,35,13,0.52), rgba(33,15,7,0.72));
-    border: 1px solid #8c5b25;
+#nc-root .nc-shell {
+    background: linear-gradient(180deg, rgba(34,24,17,.96) 0%, rgba(23,16,11,.98) 100%);
+    border: 1px solid #6d5231;
     border-radius: 18px;
-    padding: 16px;
-    box-shadow: inset 0 0 0 1px rgba(255, 200, 120, 0.04);
+    box-shadow: 0 18px 45px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.04);
+    overflow: hidden;
 }
 
-.ncalc-card.big {
-    min-height: 150px;
+#nc-root .nc-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    padding: 20px 22px;
+    background: linear-gradient(135deg, rgba(88,57,29,.95) 0%, rgba(59,37,20,.97) 100%);
+    border-bottom: 1px solid #7c5b36;
 }
 
-.ncalc-card-title {
-    color: #fff0d0;
-    font-size: 16px;
-    font-weight: 700;
-    margin-bottom: 14px;
-}
-
-.ncalc-field {
-    margin-bottom: 10px;
-}
-
-.ncalc-label {
-    display: block;
-    font-size: 13px;
-    color: #e0bf93;
+#nc-root .nc-kicker {
+    color: #d6b98a;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .12em;
     margin-bottom: 6px;
 }
 
-.ncalc-input {
+#nc-root h3 {
+    margin: 0;
+    font-size: 24px;
+    color: #fff3da;
+}
+
+#nc-root .nc-sub {
+    margin-top: 6px;
+    color: #d9c4a0;
+    font-size: 12px;
+}
+
+#nc-root .nc-stamp {
+    background: rgba(0,0,0,.18);
+    border: 1px solid rgba(255,255,255,.08);
+    color: #f6e7c9;
+    padding: 10px 12px;
+    border-radius: 12px;
+    font-weight: 700;
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+#nc-root .nc-topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+    padding: 16px 22px;
+    background: rgba(0,0,0,.18);
+    border-bottom: 1px solid rgba(255,255,255,.05);
+}
+
+#nc-root .nc-meta {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+#nc-root .nc-pill {
+    background: linear-gradient(180deg, #3a2819 0%, #2b1d12 100%);
+    border: 1px solid #6b4f31;
+    border-radius: 999px;
+    padding: 8px 12px;
+    color: #f2e1c0;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+#nc-root .nc-pill span {
+    color: #c9ae80;
+    font-size: 11px;
+    text-transform: uppercase;
+}
+
+#nc-root .nc-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+#nc-root .nc-btn {
+    height: 38px;
+    padding: 0 14px;
+    border-radius: 10px;
+    border: 1px solid #7d5b33;
+    cursor: pointer;
+    font-weight: 700;
+    transition: .15s ease;
+}
+
+#nc-root .nc-btn:hover {
+    transform: translateY(-1px);
+    filter: brightness(1.04);
+}
+
+#nc-root .nc-btn-secondary {
+    background: linear-gradient(180deg, #4d3723 0%, #372517 100%);
+    color: #f5e6c8;
+}
+
+#nc-root .nc-btn-primary {
+    background: linear-gradient(180deg, #b8863b 0%, #8d6228 100%);
+    color: #fff8ea;
+    border-color: #c89b53;
+}
+
+#nc-root .nc-grid {
+    display: grid;
+    grid-template-columns: 1.1fr .95fr;
+    gap: 16px;
+    padding: 18px 22px;
+}
+
+#nc-root .nc-grid-bottom {
+    grid-template-columns: 1fr 1fr;
+    padding-top: 0;
+}
+
+#nc-root .nc-panel {
+    background: linear-gradient(180deg, #2d1f14 0%, #21160e 100%);
+    border: 1px solid #644a2d;
+    border-radius: 16px;
+    padding: 16px;
+}
+
+#nc-root .nc-panel-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+#nc-root .nc-panel-head h4 {
+    margin: 0;
+    color: #fff1d5;
+    font-size: 16px;
+}
+
+#nc-root .nc-mini-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+}
+
+#nc-root .nc-stat-card,
+#nc-root .nc-box {
+    background: linear-gradient(180deg, #3a2819 0%, #2a1d13 100%);
+    border: 1px solid #62492c;
+    border-radius: 14px;
+    padding: 12px;
+}
+
+#nc-root .nc-stat-title,
+#nc-root .nc-box-title {
+    color: #f0d0a4;
+    font-size: 13px;
+    font-weight: 700;
+    margin-bottom: 8px;
+}
+
+#nc-root .nc-line {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    padding: 4px 0;
+    color: #e7d2b0;
+}
+
+#nc-root .nc-line b {
+    color: #fff1d7;
+}
+
+#nc-root .nc-check {
+    margin-top: 14px;
+    color: #e7d2b0;
+}
+
+#nc-root .nc-form {
+    display: grid;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+#nc-root .nc-field label {
+    display: block;
+    margin-bottom: 5px;
+    font-size: 13px;
+    color: #e0bf93;
+}
+
+#nc-root .nc-field input {
     width: 100%;
     box-sizing: border-box;
-    background: rgba(20, 10, 5, 0.8);
-    border: 1px solid #9a6328;
+    background: #17100b;
+    border: 1px solid #644a2d;
     border-radius: 10px;
-    color: #fff2d6;
+    color: #f1e2c6;
     padding: 10px 12px;
-    font-size: 15px;
     outline: none;
 }
 
-.ncalc-input:focus {
-    border-color: #c98a3a;
-    box-shadow: 0 0 0 2px rgba(201, 138, 58, 0.18);
-}
-
-.ncalc-hint {
-    font-size: 12px;
-    line-height: 1.4;
-    color: #cba97b;
-}
-
-.ncalc-stat-row {
-    display: flex;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 7px 0;
-    border-bottom: 1px solid rgba(184, 123, 50, 0.18);
-    font-size: 14px;
-}
-
-.ncalc-stat-row:last-child {
-    border-bottom: 0;
-}
-
-.ncalc-stat-row span {
-    color: #dfbe93;
-}
-
-.ncalc-stat-row b {
-    color: #fff3db;
-    font-weight: 700;
-}
-
-.ncalc-big-row {
+#nc-root .nc-results {
     display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 14px;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    padding: 0 22px 18px;
 }
 
-.ncalc-big-box {
-    border: 1px solid #8f5f28;
+#nc-root .nc-result-card {
+    background: linear-gradient(180deg, #2d1f14 0%, #21160e 100%);
+    border: 1px solid #644a2d;
     border-radius: 16px;
-    padding: 16px;
+    padding: 18px;
     text-align: center;
-    background: linear-gradient(180deg, rgba(92, 45, 18, 0.22), rgba(32, 14, 7, 0.34));
 }
 
-.ncalc-big-label {
-    color: #e0bc8d;
-    font-size: 14px;
+#nc-root .nc-result-label {
+    color: #d8bf97;
+    font-size: 13px;
     margin-bottom: 10px;
 }
 
-.ncalc-big-value {
+#nc-root .nc-result-value {
     color: #fff4dc;
     font-size: 42px;
     font-weight: 800;
     line-height: 1;
 }
 
-.ncalc-resource-grid {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 10px;
+#nc-root .nc-footer {
+    padding: 0 22px 18px;
+    color: #a98d64;
+    font-size: 11px;
 }
 
-.ncalc-res-box {
-    border: 1px solid rgba(150, 96, 37, 0.65);
-    border-radius: 14px;
-    padding: 12px;
-    background: rgba(42, 19, 9, 0.5);
-}
-
-.ncalc-res-title {
-    font-size: 13px;
-    font-weight: 700;
-    color: #f0d0a4;
-    margin-bottom: 8px;
-}
-
-.ncalc-res-line {
-    display: flex;
-    justify-content: space-between;
-    font-size: 13px;
-    padding: 2px 0;
-}
-
-.ncalc-ok {
-    color: #8ee08e !important;
-}
-
-.ncalc-warn {
-    color: #ffcb85 !important;
-}
-
-@media (max-width: 900px) {
-    .ncalc-grid.top,
-    .ncalc-grid.mid,
-    .ncalc-grid.bottom,
-    .ncalc-grid.result {
+@media (max-width: 980px) {
+    #popup_box_${DIALOG_ID} .popup_box_content { min-width: unset; }
+    #nc-root .nc-grid,
+    #nc-root .nc-grid-bottom,
+    #nc-root .nc-results,
+    #nc-root .nc-mini-grid {
         grid-template-columns: 1fr;
+    }
+    #nc-root .nc-header,
+    #nc-root .nc-topbar {
+        flex-direction: column;
+        align-items: stretch;
     }
 }
 </style>
 `;
-
-            Dialog.show(DIALOG_ID, html);
-        }
-
-        resLines(res) {
-            return `
-                <div class="ncalc-res-line"><span>Madeira</span><b>${this.format(res.wood)}</b></div>
-                <div class="ncalc-res-line"><span>Barro</span><b>${this.format(res.stone)}</b></div>
-                <div class="ncalc-res-line"><span>Ferro</span><b>${this.format(res.iron)}</b></div>
-            `;
-        }
-
-        sumText(res) {
-            return `${this.format(res.wood)} / ${this.format(res.stone)} / ${this.format(res.iron)}`;
+            Dialog.show(DIALOG_ID, html, Dialog.close());
+            $('#popup_box_' + DIALOG_ID).css('width', 'unset');
         }
 
         refreshUI() {
             const c = this.calc();
 
-            $('#ncalc_snob_total').text(this.format(c.totalCoinsScreen));
-            $('#ncalc_snob_saved').text(this.format(c.savedCoins));
-            $('#ncalc_snob_missing').text(this.format(Math.max(0, 25 - (c.savedCoins % 25 || 0)) % 25));
+            $('#nc_villages_detail').html(this.resourceRows(c.villages));
+            $('#nc_own_detail').html(this.resourceRows(c.ownTransit));
+            $('#nc_inc_detail').html(this.resourceRows(c.externalIncoming));
 
-            $('#ncalc_coin_wood').text(this.format(c.coinCost.wood));
-            $('#ncalc_coin_stone').text(this.format(c.coinCost.stone));
-            $('#ncalc_coin_iron').text(this.format(c.coinCost.iron));
+            $('#nc_coin_wood').text(this.format(c.coinCost.wood));
+            $('#nc_coin_stone').text(this.format(c.coinCost.stone));
+            $('#nc_coin_iron').text(this.format(c.coinCost.iron));
 
-            $('#ncalc_villages_sum').text(this.sumText(c.villages));
-            $('#ncalc_own_sum').text(this.sumText(c.ownTransit));
-            $('#ncalc_inc_sum').text(this.sumText(c.externalIncoming));
+            $('#nc_next_wood').text(this.format(c.nextNobleCost.wood));
+            $('#nc_next_stone').text(this.format(c.nextNobleCost.stone));
+            $('#nc_next_iron').text(this.format(c.nextNobleCost.iron));
 
-            $('#ncalc_total_own_sum').text(this.sumText(c.totalOwn));
-            $('#ncalc_total_all_sum').text(this.sumText(c.totalAll));
+            $('#nc_result_coins').text(this.format(c.coinsPossible));
+            $('#nc_result_nobles').text(this.format(c.noblesPossible));
+            $('#nc_result_missing').text(this.format(c.missingCoins));
 
-            $('#ncalc_next_wood').text(this.format(c.nextNobleCost.wood));
-            $('#ncalc_next_stone').text(this.format(c.nextNobleCost.stone));
-            $('#ncalc_next_iron').text(this.format(c.nextNobleCost.iron));
+            $('#nc_usable_detail').html(this.resourceRows(c.usableTotal));
+            $('#nc_remaining_detail').html(this.resourceRows(c.remaining));
+        }
 
-            $('#ncalc_coins_own').text(this.format(c.coinsPossibleOwn));
-            $('#ncalc_nobles_own').text(this.format(c.maxOwn.nobles));
+        buildSummaryText() {
+            const c = this.calc();
 
-            $('#ncalc_coins_all').text(this.format(c.coinsPossibleAll));
-            $('#ncalc_nobles_all').text(this.format(c.maxAll.nobles));
-
-            $('#ncalc_left_own_wood').text(this.format(c.maxOwn.remaining.wood));
-            $('#ncalc_left_own_stone').text(this.format(c.maxOwn.remaining.stone));
-            $('#ncalc_left_own_iron').text(this.format(c.maxOwn.remaining.iron));
-
-            $('#ncalc_left_all_wood').text(this.format(c.maxAll.remaining.wood));
-            $('#ncalc_left_all_stone').text(this.format(c.maxAll.remaining.stone));
-            $('#ncalc_left_all_iron').text(this.format(c.maxAll.remaining.iron));
-
-            $('#ncalc_villages_detail').html(this.resLines(c.villages));
-            $('#ncalc_own_detail').html(this.resLines(c.ownTransit));
-            $('#ncalc_inc_detail').html(this.resLines(c.externalIncoming));
+            return [
+                '[b]Calculadora de Nobres[/b]',
+                `Moedas já cunhadas: ${this.format(c.mintedCoins)}`,
+                `Moedas poupadas p/ próximo: ${this.format(c.savedCoins)}`,
+                `Desconto moeda: ${this.getMintDiscount()}%`,
+                `Moedas possíveis: ${this.format(c.coinsPossible)}`,
+                `Nobres possíveis: ${this.format(c.noblesPossible)}`,
+                `Custo próximo nobre: ${this.format(c.nextNobleCost.wood)} madeira / ${this.format(c.nextNobleCost.stone)} barro / ${this.format(c.nextNobleCost.iron)} ferro`,
+                `Sobrantes: ${this.format(c.remaining.wood)} madeira / ${this.format(c.remaining.stone)} barro / ${this.format(c.remaining.iron)} ferro`
+            ].join('\n');
         }
 
         bindEvents() {
-            $(document)
-                .off('input.' + SCRIPT_NS, '#nobres_discount_input')
-                .on('input.' + SCRIPT_NS, '#nobres_discount_input', () => this.refreshUI());
+            $(document).off('input.' + SCRIPT_NS, '#nc_saved, #nc_minted, #nc_discount');
+            $(document).on('input.' + SCRIPT_NS, '#nc_saved, #nc_minted, #nc_discount', () => this.refreshUI());
+
+            $(document).off('change.' + SCRIPT_NS, '#nc_include_incoming');
+            $(document).on('change.' + SCRIPT_NS, '#nc_include_incoming', () => this.refreshUI());
+
+            $(document).off('click.' + SCRIPT_NS, '#nc-refresh');
+            $(document).on('click.' + SCRIPT_NS, '#nc-refresh', async () => {
+                try { Dialog.close(); } catch (e) {}
+                const n = new NobresCalculator();
+                await n.init();
+            });
+
+            $(document).off('click.' + SCRIPT_NS, '#nc-copy');
+            $(document).on('click.' + SCRIPT_NS, '#nc-copy', async () => {
+                const txt = this.buildSummaryText();
+                try {
+                    await navigator.clipboard.writeText(txt);
+                    UI.SuccessMessage('Resumo copiado!', 1500);
+                } catch (e) {
+                    console.log(txt);
+                    UI.InfoMessage('Não deu para copiar automaticamente. Vê a consola.', 2000);
+                }
+            });
         }
     }
 
