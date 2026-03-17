@@ -485,24 +485,24 @@
                 (v.catapult || 0) * 8;
         }
 
-        #calculateNukeStatusByVillageArray(villagesArray) {
-            const status = { full: 0, semi: 0, rebuilding: 0 };
+       #calculateNukeStatusByVillageArray(villagesArray) {
+    const status = { full: 0, semi: 0, rebuilding: 0 };
 
-            villagesArray.forEach(v => {
-                const pop = this.#calculateOffensivePop(v);
-                const axes = v.axe || 0;
+    villagesArray.forEach(v => {
+        const pop = this.#calculateOffensivePop(v);
+        const axes = v.axe || 0;
 
-                if (pop > 20000 && axes > 500) {
-                    status.full++;
-                } else if (pop > 16000 && pop < 20000 && axes > 500) {
-                    status.semi++;
-                } else if (pop <= 16000 && axes > 500) {
-                    status.rebuilding++;
-                }
-            });
-
-            return status;
+        if (pop > 20000 && axes > 500) {
+            status.full++;
+        } else if (pop > 16000 && pop < 20000 && axes > 500) {
+            status.semi++;
+        } else if (pop > 12500 && pop < 16000 && axes > 500) {
+            status.rebuilding++;
         }
+    });
+
+    return status;
+}
 
         async #getVillageRowsForNukes() {
             const villages = [];
