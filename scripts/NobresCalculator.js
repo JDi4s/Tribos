@@ -1,6 +1,6 @@
 (function () {
-    const SCRIPT_NS = 'nobres_clean_modern_v1';
-    const DIALOG_ID = 'nobres_clean_modern_dialog';
+    const SCRIPT_NS = 'nobres_final_modern_v4';
+    const DIALOG_ID = 'nobres_final_modern_dialog';
 
     try { $(document).off('.' + SCRIPT_NS); } catch (e) {}
     try { Dialog.close(); } catch (e) {}
@@ -20,6 +20,12 @@
                 totalMinted: 0,
                 savedCoins: 0,
                 missingCoins: 25
+            };
+
+            this.icons = {
+                wood: 'https://dspt.innogamescdn.com/asset/2a2f957f/graphic/holz.png',
+                stone: 'https://dspt.innogamescdn.com/asset/2a2f957f/graphic/lehm.png',
+                iron: 'https://dspt.innogamescdn.com/asset/2a2f957f/graphic/eisen.png'
             };
         }
 
@@ -54,12 +60,33 @@
             }
         }
 
+        syncFetch(url) {
+            let temp = '';
+            $.ajax({
+                url,
+                async: false,
+                success: function (data) {
+                    temp = data;
+                },
+                error: function () {
+                    temp = '';
+                }
+            });
+            return temp;
+        }
+
         parseNumber(text) {
             return parseInt(String(text || '').replace(/[^\d]/g, ''), 10) || 0;
         }
 
         format(n) {
             return new Intl.NumberFormat('pt-PT').format(Number(n || 0));
+        }
+
+        addRes(target, src) {
+            target.wood += src.wood || 0;
+            target.stone += src.stone || 0;
+            target.iron += src.iron || 0;
         }
 
         sumRes(...items) {
@@ -78,12 +105,6 @@
             };
         }
 
-        addRes(target, src) {
-            target.wood += src.wood || 0;
-            target.stone += src.stone || 0;
-            target.iron += src.iron || 0;
-        }
-
         async loadData() {
             await this.getVillageResources();
             await this.getTransitResources();
@@ -98,14 +119,21 @@
 
             rows.each((_, row) => {
                 const $row = $(row);
-                const cell = $row.find('td').eq(3);
+                let wood = 0, stone = 0, iron = 0;
 
-                let wood = this.parseNumber(cell.find('.wood').first().text());
-                let stone = this.parseNumber(cell.find('.stone').first().text());
-                let iron = this.parseNumber(cell.find('.iron').first().text());
+                const resourceCell = $row.find('td').filter(function () {
+                    return $(this).find('.wood, .stone, .iron').length > 0;
+                }).first();
+
+                if (resourceCell.length) {
+                    wood = this.parseNumber(resourceCell.find('.wood').first().text());
+                    stone = this.parseNumber(resourceCell.find('.stone').first().text());
+                    iron = this.parseNumber(resourceCell.find('.iron').first().text());
+                }
 
                 if (!wood && !stone && !iron) {
-                    const txt = cell.text().replace(/\s+/g, ' ').trim();
+                    const likelyCell = $row.find('td').eq(3);
+                    const txt = likelyCell.text().replace(/\s+/g, ' ').trim();
                     const nums = txt.match(/\d[\d.\s]*/g) || [];
                     if (nums.length >= 3) {
                         wood = this.parseNumber(nums[0]);
@@ -122,43 +150,48 @@
             this.resources.villages = total;
         }
 
-        extractTraderRow($row) {
-            let wood = this.parseNumber($row.find('.wood').last().text());
-            let stone = this.parseNumber($row.find('.stone').last().text());
-            let iron = this.parseNumber($row.find('.iron').last().text());
-
-            if (!wood && !stone && !iron) {
-                const txt = $row.text().replace(/\s+/g, ' ').trim();
-                const nums = txt.match(/\d[\d.\s]*/g) || [];
-                if (nums.length >= 3) {
-                    const last3 = nums.slice(-3);
-                    wood = this.parseNumber(last3[0]);
-                    stone = this.parseNumber(last3[1]);
-                    iron = this.parseNumber(last3[2]);
-                }
-            }
-
-            return { wood, stone, iron };
-        }
-
-        parseTraderPage(html) {
-            const dom = $.parseHTML(html);
-            const rows = $(dom).find('#trades_table tbody tr');
-            const total = { wood: 0, stone: 0, iron: 0 };
-
-            rows.each((_, row) => {
-                this.addRes(total, this.extractTraderRow($(row)));
-            });
-
-            return total;
-        }
-
         async getTransitResources() {
             const ownHtml = await this.fetchPage(this.buildUrl('overview_villages', 'trader', { type: 'own' }));
             const incHtml = await this.fetchPage(this.buildUrl('overview_villages', 'trader', { type: 'inc' }));
 
-            this.resources.ownTransit = this.parseTraderPage(ownHtml);
-            this.resources.externalIncoming = this.parseTraderPage(incHtml);
+            this.resources.ownTransit = this.parseTraderSummary(ownHtml, 'outgoing');
+            this.resources.externalIncoming = this.parseTraderSummary(incHtml, 'incoming');
+        }
+
+        parseTraderSummary(html, mode) {
+            const dom = $.parseHTML(html);
+            const $dom = $(dom);
+            const allText = $dom.text().replace(/\s+/g, ' ').trim();
+
+            let wood = 0, stone = 0, iron = 0;
+
+            if (mode === 'incoming') {
+                const m =
+                    allText.match(/A chegar:\s*.*?(\d[\d\.\s]*)\s+.*?(\d[\d\.\s]*)\s+.*?(\d[\d\.\s]*)\s+(?:De saída:|Os seus transportes|Transportes a chegar|$)/i);
+
+                if (m) {
+                    wood = this.parseNumber(m[1]);
+                    stone = this.parseNumber(m[2]);
+                    iron = this.parseNumber(m[3]);
+                }
+            }
+
+            if (mode === 'outgoing') {
+                const m =
+                    allText.match(/De saída:\s*.*?(\d[\d\.\s]*)\s+.*?(\d[\d\.\s]*)\s+.*?(\d[\d\.\s]*)\s+(?:Os seus transportes|Transportes a chegar|$)/i);
+
+                if (m) {
+                    wood = this.parseNumber(m[1]);
+                    stone = this.parseNumber(m[2]);
+                    iron = this.parseNumber(m[3]);
+                }
+            }
+
+            return {
+                wood: wood || 0,
+                stone: stone || 0,
+                iron: iron || 0
+            };
         }
 
         async getAcademyData() {
@@ -166,24 +199,24 @@
             const text = $('<div>').html(html).text().replace(/\s+/g, ' ').trim();
 
             const totalMatch =
-                text.match(/Total\s*:?\s*(\d+)/i) ||
-                text.match(/Moedas.*?Total\s*:?\s*(\d+)/i);
-
-            const savedMatch =
-                text.match(/Já poupado.*?(\d+)/i) ||
-                text.match(/Poupadas?.*?(\d+)/i) ||
-                text.match(/Guardadas?.*?(\d+)/i) ||
-                text.match(/Armazenadas?.*?(\d+)/i);
+                text.match(/Moedas de ouro\s*Total:\s*(\d+)/i) ||
+                text.match(/Total:\s*(\d+)/i);
 
             const missingMatch =
-                text.match(/Faltam\s*:?\s*(\d+)/i) ||
-                text.match(/Moedas em falta.*?(\d+)/i);
+                text.match(/ainda faltam:\s*(\d+)\s*moedas de ouro/i) ||
+                text.match(/faltam:\s*(\d+)\s*moedas de ouro/i);
+
+            const savedMatch =
+                text.match(/Já poupado para o limite de nobres\s*\d+:\s*(\d+)\s*moedas de ouro/i) ||
+                text.match(/Já poupado.*?:\s*(\d+)\s*moedas de ouro/i);
 
             this.academy.totalMinted = totalMatch ? parseInt(totalMatch[1], 10) : 0;
-            this.academy.savedCoins = savedMatch ? parseInt(savedMatch[1], 10) : (this.academy.totalMinted % 25);
-            this.academy.missingCoins = missingMatch
-                ? parseInt(missingMatch[1], 10)
-                : ((25 - (this.academy.savedCoins % 25)) % 25);
+            this.academy.missingCoins = missingMatch ? parseInt(missingMatch[1], 10) : 25;
+            this.academy.savedCoins = savedMatch ? parseInt(savedMatch[1], 10) : Math.max(0, 25 - this.academy.missingCoins);
+
+            if (this.academy.savedCoins < 0 || this.academy.savedCoins > 24) {
+                this.academy.savedCoins = Math.max(0, 25 - this.academy.missingCoins);
+            }
         }
 
         getCurrentGroupName() {
@@ -210,29 +243,19 @@
             }
         }
 
-        syncFetch(url) {
-            let temp = '';
-            $.ajax({
-                url: url,
-                async: false,
-                success: function (data) { temp = data; }
-            });
-            return temp;
-        }
-
         getMintDiscount() {
             const raw = $('#nc_discount').val();
             const val = parseFloat(String(raw || '0').replace(',', '.'));
             return isNaN(val) ? 0 : Math.max(0, Math.min(100, val));
         }
 
-        getManualSavedCoins() {
+        getSavedCoins() {
             const raw = $('#nc_saved').val();
             const val = this.parseNumber(raw);
-            return Math.max(0, val);
+            return Math.max(0, Math.min(24, val));
         }
 
-        getManualMintedCoins() {
+        getMintedCoins() {
             const raw = $('#nc_minted').val();
             const val = this.parseNumber(raw);
             return Math.max(0, val);
@@ -265,8 +288,7 @@
             let saved = savedCoins;
 
             while (true) {
-                const missing = Math.max(0, 25 - (saved % 25 || 0));
-                const missingCoins = saved > 0 ? (saved % 25 === 0 ? 0 : missing) : 25;
+                const missingCoins = Math.max(0, 25 - saved);
 
                 const cost = {
                     wood: this.snobCost.wood + (coinCost.wood * missingCoins),
@@ -299,13 +321,10 @@
             const totalWithIncoming = this.sumRes(villages, ownTransit, externalIncoming);
             const usableTotal = this.includeIncoming() ? totalWithIncoming : totalOwn;
 
-            const savedCoins = this.getManualSavedCoins();
-            const mintedCoins = this.getManualMintedCoins();
+            const savedCoins = this.getSavedCoins();
+            const mintedCoins = this.getMintedCoins();
             const coinCost = this.getDiscountedCoinCost();
-
-            const missingCoins = savedCoins > 0
-                ? (savedCoins % 25 === 0 ? 0 : 25 - (savedCoins % 25))
-                : 25;
+            const missingCoins = Math.max(0, 25 - savedCoins);
 
             const nextNobleCost = {
                 wood: this.snobCost.wood + (coinCost.wood * missingCoins),
@@ -336,9 +355,24 @@
 
         resourceRows(res) {
             return `
-                <div class="nc-line"><span>Madeira</span><b>${this.format(res.wood)}</b></div>
-                <div class="nc-line"><span>Barro</span><b>${this.format(res.stone)}</b></div>
-                <div class="nc-line"><span>Ferro</span><b>${this.format(res.iron)}</b></div>
+                <div class="nc-line">
+                    <span class="nc-res-label">
+                        <img src="${this.icons.wood}" class="nc-res-icon"> Madeira
+                    </span>
+                    <b>${this.format(res.wood)}</b>
+                </div>
+                <div class="nc-line">
+                    <span class="nc-res-label">
+                        <img src="${this.icons.stone}" class="nc-res-icon"> Barro
+                    </span>
+                    <b>${this.format(res.stone)}</b>
+                </div>
+                <div class="nc-line">
+                    <span class="nc-res-label">
+                        <img src="${this.icons.iron}" class="nc-res-icon"> Ferro
+                    </span>
+                    <b>${this.format(res.iron)}</b>
+                </div>
             `;
         }
 
@@ -426,16 +460,16 @@
 
                 <div class="nc-box">
                     <div class="nc-box-title">Custo da moeda</div>
-                    <div class="nc-line"><span>Madeira</span><b id="nc_coin_wood">-</b></div>
-                    <div class="nc-line"><span>Barro</span><b id="nc_coin_stone">-</b></div>
-                    <div class="nc-line"><span>Ferro</span><b id="nc_coin_iron">-</b></div>
+                    <div class="nc-line"><span class="nc-res-label"><img src="${this.icons.wood}" class="nc-res-icon"> Madeira</span><b id="nc_coin_wood">-</b></div>
+                    <div class="nc-line"><span class="nc-res-label"><img src="${this.icons.stone}" class="nc-res-icon"> Barro</span><b id="nc_coin_stone">-</b></div>
+                    <div class="nc-line"><span class="nc-res-label"><img src="${this.icons.iron}" class="nc-res-icon"> Ferro</span><b id="nc_coin_iron">-</b></div>
                 </div>
 
                 <div class="nc-box">
                     <div class="nc-box-title">Custo do próximo nobre</div>
-                    <div class="nc-line"><span>Madeira</span><b id="nc_next_wood">-</b></div>
-                    <div class="nc-line"><span>Barro</span><b id="nc_next_stone">-</b></div>
-                    <div class="nc-line"><span>Ferro</span><b id="nc_next_iron">-</b></div>
+                    <div class="nc-line"><span class="nc-res-label"><img src="${this.icons.wood}" class="nc-res-icon"> Madeira</span><b id="nc_next_wood">-</b></div>
+                    <div class="nc-line"><span class="nc-res-label"><img src="${this.icons.stone}" class="nc-res-icon"> Barro</span><b id="nc_next_stone">-</b></div>
+                    <div class="nc-line"><span class="nc-res-label"><img src="${this.icons.iron}" class="nc-res-icon"> Ferro</span><b id="nc_next_iron">-</b></div>
                 </div>
             </div>
         </div>
@@ -663,6 +697,7 @@
 #nc-root .nc-line {
     display: flex;
     justify-content: space-between;
+    gap: 10px;
     font-size: 13px;
     padding: 4px 0;
     color: #e7d2b0;
@@ -670,6 +705,22 @@
 
 #nc-root .nc-line b {
     color: #fff1d7;
+    text-align: right;
+    word-break: break-word;
+}
+
+#nc-root .nc-res-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+#nc-root .nc-res-icon {
+    width: 16px;
+    height: 16px;
+    object-fit: contain;
+    vertical-align: middle;
+    flex: 0 0 16px;
 }
 
 #nc-root .nc-check {
@@ -776,6 +827,17 @@
 
             $('#nc_usable_detail').html(this.resourceRows(c.usableTotal));
             $('#nc_remaining_detail').html(this.resourceRows(c.remaining));
+
+            const noExternal =
+                (c.externalIncoming.wood || 0) === 0 &&
+                (c.externalIncoming.stone || 0) === 0 &&
+                (c.externalIncoming.iron || 0) === 0;
+
+            if (noExternal) {
+                $('#nc_include_incoming').closest('.nc-check').hide();
+            } else {
+                $('#nc_include_incoming').closest('.nc-check').show();
+            }
         }
 
         buildSummaryText() {
