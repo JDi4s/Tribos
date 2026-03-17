@@ -32,7 +32,8 @@
                         errorFetching: 'An error occurred while trying to fetch the following URL:',
                         missingSavengeMassScreenElement: 'An error occurred trying to locate the ScavengeMassScreen element inside the mass scavenge page.',
                         invalidWebhook: 'Invalid or missing Discord webhook.',
-                        troopsReadError: 'Could not read troop data.'
+                        troopsReadError: 'Could not read troop data.',
+                        invalidWorldConfig: 'Invalid world configuration.'
                     },
                     successMessage: 'Loaded successfully!',
                     loadingMessage: 'Loading...',
@@ -63,7 +64,8 @@
                         errorFetching: 'Ocorreu um erro ao tentar carregar o seguinte URL:',
                         missingSavengeMassScreenElement: 'Ocorreu um erro ao tentar localizar o elemento ScavengeMassScreen dentro da página de buscas em massa.',
                         invalidWebhook: 'Webhook do Discord inválido ou não definido.',
-                        troopsReadError: 'Não foi possível ler os dados das tropas.'
+                        troopsReadError: 'Não foi possível ler os dados das tropas.',
+                        invalidWorldConfig: 'Configuração do mundo inválida.'
                     },
                     successMessage: 'Carregado com sucesso!',
                     loadingMessage: 'A carregar...',
@@ -107,25 +109,36 @@
                 worldConfig = await this.#getWorldConfig();
             }
 
-            this.worldConfig = $.parseXML(worldConfig);
-            this.isScavengingWorld =
-                this.worldConfig
-                    .getElementsByTagName('config')[0]
-                    .getElementsByTagName('game')[0]
-                    .getElementsByTagName('scavenging')[0]
-                    .textContent.trim() === '1';
+            this.worldConfig = typeof worldConfig === 'string' ? $.parseXML(worldConfig) : worldConfig;
+
+            try {
+                this.isScavengingWorld =
+                    this.worldConfig
+                        .getElementsByTagName('config')[0]
+                        .getElementsByTagName('game')[0]
+                        .getElementsByTagName('scavenging')[0]
+                        .textContent.trim() === '1';
+            } catch (e) {
+                UI.ErrorMessage(this.UserTranslation.errorMessages.invalidWorldConfig);
+                throw e;
+            }
         }
 
         async #getWorldConfig() {
             const xml = this.#fetchHtmlPage('/interface.php?func=get_config');
-            const xmlString = typeof xml === 'string' ? xml : new XMLSerializer().serializeToString(xml);
+            const xmlString = typeof xml === 'string'
+                ? xml
+                : new XMLSerializer().serializeToString(xml);
+
             localStorage.setItem(this.worldConfigFileName, xmlString);
             await this.#waitMilliseconds(Date.now(), 200);
             return xmlString;
         }
 
         async #waitMilliseconds(lastRunTime, milliseconds = 0) {
-            await new Promise(res => setTimeout(res, Math.max((lastRunTime || 0) + milliseconds - Date.now(), 0)));
+            await new Promise(res =>
+                setTimeout(res, Math.max((lastRunTime || 0) + milliseconds - Date.now(), 0))
+            );
         }
 
         #generateUrl(screen, mode = null, extraParams = {}) {
@@ -149,7 +162,7 @@
         }
 
         #fetchHtmlPage(url) {
-            let temp_data = null;
+            let tempData = null;
             const self = this;
 
             $.ajax({
@@ -157,14 +170,14 @@
                 url: url,
                 type: 'GET',
                 success: function (data) {
-                    temp_data = data;
+                    tempData = data;
                 },
                 error: function () {
                     UI.ErrorMessage(`${self.UserTranslation.errorMessages.errorFetching} ${url}`);
                 }
             });
 
-            return temp_data;
+            return tempData;
         }
 
         async #getTroopsScavengingWorldObj() {
@@ -208,7 +221,10 @@
 
             async function getScavengeMassScreenJson(currentObj, currentPage = 0, lastRunTime = 0) {
                 await currentObj.#waitMilliseconds(lastRunTime, 200);
-                const html = currentObj.#fetchHtmlPage(currentObj.#generateUrl('place', 'scavenge_mass', { page: currentPage }));
+                const html = currentObj.#fetchHtmlPage(
+                    currentObj.#generateUrl('place', 'scavenge_mass', { page: currentPage })
+                );
+
                 if (!html) return false;
 
                 const matches = html.match(/ScavengeMassScreen[\s\S]*?(,\n *\[.*?\}{0,3}\],\n)/);
@@ -246,7 +262,9 @@
             do {
                 lastRunTime = Date.now();
 
-                const rawPage = this.#fetchHtmlPage(this.#generateUrl('overview_villages', 'units', { page: currentPage }));
+                const rawPage = this.#fetchHtmlPage(
+                    this.#generateUrl('overview_villages', 'units', { page: currentPage })
+                );
                 if (!rawPage) break;
 
                 const overviewTroopsPage = $.parseHTML(rawPage);
@@ -303,7 +321,10 @@
         }
 
         #getGroupsObj() {
-            const html = $.parseHTML(this.#fetchHtmlPage(this.#generateUrl('overview_villages', 'groups', { type: 'static' })));
+            const html = $.parseHTML(
+                this.#fetchHtmlPage(this.#generateUrl('overview_villages', 'groups', { type: 'static' }))
+            );
+
             let groups = $(html).find('.vis_item').find('a,strong');
             const groupsArr = {};
 
@@ -343,28 +364,19 @@
             };
         }
 
-        #calculateNukeStatusFromTotals(totalTroops) {
-            const pop =
-                (totalTroops.axe || 0) * 1 +
-                (totalTroops.light || 0) * 4 +
-                (totalTroops.marcher || 0) * 5 +
-                (totalTroops.ram || 0) * 5 +
-                (totalTroops.catapult || 0) * 8;
-
-            return pop;
+        #calculateOffensivePop(v) {
+            return (v.axe || 0) * 1 +
+                (v.light || 0) * 4 +
+                (v.marcher || 0) * 5 +
+                (v.ram || 0) * 5 +
+                (v.catapult || 0) * 8;
         }
 
         #calculateNukeStatusByVillageArray(villagesArray) {
             const status = { full: 0, semi: 0, rebuilding: 0 };
 
             villagesArray.forEach(v => {
-                const pop =
-                    (v.axe || 0) * 1 +
-                    (v.light || 0) * 4 +
-                    (v.marcher || 0) * 5 +
-                    (v.ram || 0) * 5 +
-                    (v.catapult || 0) * 8;
-
+                const pop = this.#calculateOffensivePop(v);
                 if (pop >= 19000) status.full++;
                 else if (pop >= 10000) status.semi++;
                 else if (pop >= 2000) status.rebuilding++;
@@ -386,7 +398,9 @@
             do {
                 lastRunTime = Date.now();
 
-                const rawPage = this.#fetchHtmlPage(this.#generateUrl('overview_villages', 'units', { page: currentPage }));
+                const rawPage = this.#fetchHtmlPage(
+                    this.#generateUrl('overview_villages', 'units', { page: currentPage })
+                );
                 if (!rawPage) break;
 
                 const overviewTroopsPage = $.parseHTML(rawPage);
@@ -432,9 +446,7 @@
         }
 
         #getServerTime() {
-            const serverTime = $('#serverTime').text();
-            const serverDate = $('#serverDate').text();
-            return serverDate + ' ' + serverTime;
+            return $('#serverDate').text() + ' ' + $('#serverTime').text();
         }
 
         #formatNumber(value) {
@@ -490,7 +502,7 @@
                             { name: "Arq. Mont.", value: `${this.#formatNumber(totalTroops.marcher || 0)}`, inline: true },
                             { name: "Aríetes", value: `${this.#formatNumber(totalTroops.ram || 0)}`, inline: true },
                             { name: "Catas", value: `${this.#formatNumber(totalTroops.catapult || 0)}`, inline: true },
-                            { name: "Pop ofensiva", value: `${this.#formatNumber(this.#calculateNukeStatusFromTotals(totalTroops))}`, inline: true }
+                            { name: "Pop ofensiva", value: `${this.#formatNumber(this.#calculateOffensivePop(totalTroops))}`, inline: true }
                         ]
                     }
                 ]
@@ -524,7 +536,7 @@
             const defensiveTroops = this.#buildDefensiveTroopsObj(troopsObj);
             const nukeStatus = await this.#getNukeStatus();
 
-            let html = `
+            const html = `
 <div id="dd-root">
     <div class="dd-head">
         <h3>${this.UserTranslation.title}</h3>
@@ -708,11 +720,11 @@
 
             function getTroopsLine(translation, troopsObj, type = null) {
                 const troops = type === null ? (() => troopsObj) : (() => {
-                    const troops = {};
+                    const merged = {};
                     $.each(troopsObj.villagesTroops, function (key, value) {
-                        troops[key] = value + (troopsObj.scavengingTroops[key] || 0);
+                        merged[key] = value + (troopsObj.scavengingTroops[key] || 0);
                     });
-                    return troops;
+                    return merged;
                 });
 
                 let html = `<tr><td class="center" style="text-wrap: nowrap;">${translation}</td>`;
