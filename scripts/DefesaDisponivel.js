@@ -1,44 +1,48 @@
 javascript:(() => {
-    /* Script Name: Troop Counter Saven + Discord */
-    /* Base: JDi4s */
-    /* Edit: botão Discord + envio do total */
-
     const webhookURL = 'COLOCA_AQUI_O_TEU_WEBHOOK_DISCORD';
+    const SCRIPT_NS = 'vtc_modern';
+    const DIALOG_ID = 'vtc_modern_dialog';
 
+    try { $(document).off('.' + SCRIPT_NS); } catch (e) {}
     try { Dialog.close(); } catch (e) {}
+    try { delete window.villagesTroopsCounter; } catch (e) { window.villagesTroopsCounter = undefined; }
 
-    try {
-        window.villagesTroopsCounter = undefined;
-    } catch (e) {}
-
-    const VillagesTroopsCounter = class {
-        static VillagesTroopsCounterTranslations() {
+    class VillagesTroopsCounter {
+        static translations() {
             return {
                 en_US: {
-                    title: 'Home and Scavenging Troops Counter',
+                    title: 'Troops Counter',
+                    subtitle: 'Home, scavenging and total troops',
                     home: 'Home',
                     scavenging: 'Scavenging',
                     total: 'Total',
-                    sendDiscord: 'Share total defense to ticket',
+                    group: 'Current group',
+                    refresh: 'Refresh',
+                    sendDiscord: 'Send to Discord',
+                    noGroup: 'All',
                     errorMessages: {
                         premiumRequired: 'Error. A premium account is required to run this script!',
-                        errorFetching: 'An error occured while trying to fetch the following URL:',
-                        missingSavengeMassScreenElement: 'An error occurred trying to locate the ScavengeMassScreen element inside the mass scavenge page.',
+                        errorFetching: 'An error occurred while trying to fetch the following URL:',
+                        missingSavengeMassScreenElement: 'Could not locate ScavengeMassScreen in the mass scavenging page.',
                         invalidWebhook: 'Invalid or missing Discord webhook.'
                     },
                     successMessage: 'Loaded successfully!',
-                    loadingMessage: 'Loading...',
-                    loadingWorldConfigMessage: 'Loading world config...',
+                    loadingMessage: 'Loading troops...',
+                    loadingWorldConfigMessage: 'Loading world configuration...',
                     discordSuccess: 'Defense sent to Discord successfully!',
                     discordError: 'There was an error sending the defense to Discord.',
-                    credits: 'Village Troops Counter + Discord edit'
+                    credits: 'Modern Troops Counter'
                 },
                 pt_PT: {
-                    title: 'Contador de tropas em casa e em buscas',
+                    title: 'Contador de Tropas',
+                    subtitle: 'Tropas em casa, em busca e total',
                     home: 'Em casa',
                     scavenging: 'Em busca',
                     total: 'Total',
-                    sendDiscord: 'Partilhar defesa disponível no ticket',
+                    group: 'Grupo atual',
+                    refresh: 'Atualizar',
+                    sendDiscord: 'Enviar para Discord',
+                    noGroup: 'Todos',
                     errorMessages: {
                         premiumRequired: 'Erro. É necessário possuir conta premium para correr este script!',
                         errorFetching: 'Ocorreu um erro ao tentar carregar o seguinte URL:',
@@ -46,20 +50,18 @@ javascript:(() => {
                         invalidWebhook: 'Webhook do Discord inválido ou não definido.'
                     },
                     successMessage: 'Carregado com sucesso!',
-                    loadingMessage: 'A carregar...',
+                    loadingMessage: 'A carregar tropas...',
                     loadingWorldConfigMessage: 'A carregar configurações do mundo...',
                     discordSuccess: 'Defesa enviada para o Discord com sucesso!',
                     discordError: 'Ocorreu um erro ao enviar a defesa para o Discord.',
-                    credits: 'Contador de tropas by JDi4s'
+                    credits: 'Contador de tropas moderno'
                 }
             };
         }
 
         constructor() {
-            this.UserTranslation =
-                game_data.locale in VillagesTroopsCounter.VillagesTroopsCounterTranslations()
-                    ? VillagesTroopsCounter.VillagesTroopsCounterTranslations()[game_data.locale]
-                    : VillagesTroopsCounter.VillagesTroopsCounterTranslations().en_US;
+            const allTranslations = VillagesTroopsCounter.translations();
+            this.t = allTranslations[game_data.locale] || allTranslations.en_US;
 
             this.availableSupportUnits = [...game_data.units];
             const militiaIndex = this.availableSupportUnits.indexOf('militia');
@@ -67,13 +69,13 @@ javascript:(() => {
 
             this.worldConfig = null;
             this.isScavengingWorld = false;
-            this.worldConfigFileName = `worldConfigFile${game_data.world}`;
+            this.worldConfigFileName = `worldConfigFile_${game_data.world}`;
             this.lastTroopsObj = null;
         }
 
         async init() {
             if (!game_data.features.Premium.active) {
-                UI.ErrorMessage(this.UserTranslation.errorMessages.premiumRequired);
+                UI.ErrorMessage(this.t.errorMessages.premiumRequired);
                 return;
             }
 
@@ -85,7 +87,7 @@ javascript:(() => {
             let worldConfig = localStorage.getItem(this.worldConfigFileName);
 
             if (worldConfig === null) {
-                UI.InfoMessage(this.UserTranslation.loadingWorldConfigMessage);
+                UI.InfoMessage(this.t.loadingWorldConfigMessage);
                 worldConfig = await this.#getWorldConfig();
             }
 
@@ -101,10 +103,8 @@ javascript:(() => {
         async #getWorldConfig() {
             const xml = this.#fetchHtmlPage('/interface.php?func=get_config');
             const xmlString = typeof xml === 'string' ? xml : new XMLSerializer().serializeToString(xml);
-
             localStorage.setItem(this.worldConfigFileName, xmlString);
             await this.#waitMilliseconds(Date.now(), 200);
-
             return xmlString;
         }
 
@@ -128,29 +128,28 @@ javascript:(() => {
 
         #initTroops() {
             const troops = {};
-            this.availableSupportUnits.forEach(function (unit) {
+            this.availableSupportUnits.forEach((unit) => {
                 troops[unit] = 0;
             });
             return troops;
         }
 
         #fetchHtmlPage(url) {
-            let temp_data = null;
+            let tempData = null;
 
             $.ajax({
                 async: false,
                 url: url,
                 type: 'GET',
                 success: function (data) {
-                    temp_data = data;
+                    tempData = data;
                 },
-                error: (jqXHR) => {
-                    console.log(jqXHR);
-                    UI.ErrorMessage(`${this.UserTranslation.errorMessages.errorFetching} ${url}`);
+                error: () => {
+                    UI.ErrorMessage(`${this.t.errorMessages.errorFetching} ${url}`);
                 }
             });
 
-            return temp_data;
+            return tempData;
         }
 
         async #getTroopsScavengingWorldObj() {
@@ -204,7 +203,7 @@ javascript:(() => {
                 const matches = html.match(/ScavengeMassScreen[\s\S]*?(,\n *\[.*?\}{0,3}\],\n)/);
 
                 if (!matches || matches.length <= 1) {
-                    UI.ErrorMessage(currentObj.UserTranslation.errorMessages.missingSavengeMassScreenElement);
+                    UI.ErrorMessage(currentObj.t.errorMessages.missingSavengeMassScreenElement);
                     return false;
                 }
 
@@ -212,7 +211,11 @@ javascript:(() => {
                 json = json.substring(json.indexOf('['));
                 json = json.substring(0, json.length - 2);
 
-                return JSON.parse(json);
+                try {
+                    return JSON.parse(json);
+                } catch (e) {
+                    return false;
+                }
             }
         }
 
@@ -301,12 +304,15 @@ javascript:(() => {
             if ($(groups).length > 0) {
                 $.each(groups, function (_, group) {
                     const val = $(group).text().trim();
-                    groupsArr[group.getAttribute('data-group-id')] = val;
+                    const id = group.getAttribute('data-group-id');
+                    if (id) groupsArr[id] = val;
                 });
             } else {
                 groups = $(html).find('.vis_item select option');
                 $.each(groups, function (_, group) {
-                    groupsArr[new URLSearchParams($(group).val()).get('group')] = $(group).text().trim();
+                    const val = $(group).val();
+                    const id = new URLSearchParams(val).get('group');
+                    if (id !== null) groupsArr[id] = $(group).text().trim();
                 });
             }
 
@@ -321,6 +327,11 @@ javascript:(() => {
             return total;
         }
 
+        #getCurrentGroupName() {
+            const groups = this.#getGroupsObj();
+            return (game_data.group_id && groups[game_data.group_id]) || this.t.noGroup;
+        }
+
         #sendToDiscord(totalTroops) {
             const validWebhook =
                 typeof webhookURL === 'string' &&
@@ -330,12 +341,11 @@ javascript:(() => {
                 );
 
             if (!validWebhook) {
-                UI.ErrorMessage(this.UserTranslation.errorMessages.invalidWebhook);
+                UI.ErrorMessage(this.t.errorMessages.invalidWebhook);
                 return;
             }
 
-            let currentGroup = (game_data.group_id && this.#getGroupsObj()[game_data.group_id]) || 'todos';
-            currentGroup = String(currentGroup).trim();
+            const currentGroup = String(this.#getCurrentGroupName()).trim();
 
             const embedData = {
                 content: `**Tropa Defensiva (Atualizado em: ${this.#getServerTime()})**\n**Jogador:** ${game_data.player.name}`,
@@ -361,8 +371,8 @@ javascript:(() => {
                 method: 'POST',
                 contentType: 'application/json',
                 data: JSON.stringify(embedData),
-                success: () => UI.SuccessMessage(this.UserTranslation.discordSuccess, 3000),
-                error: () => UI.ErrorMessage(this.UserTranslation.discordError)
+                success: () => UI.SuccessMessage(this.t.discordSuccess, 3000),
+                error: () => UI.ErrorMessage(this.t.discordError)
             });
         }
 
@@ -372,95 +382,268 @@ javascript:(() => {
             return `${serverDate} ${serverTime}`;
         }
 
+        #formatNumber(value) {
+            return new Intl.NumberFormat('pt-PT').format(Number(value || 0));
+        }
+
+        #renderUnitGrid(troopsObj) {
+            let html = '';
+            this.availableSupportUnits.forEach((unit) => {
+                html += `
+                    <div class="vtc-unit-card">
+                        <div class="vtc-unit-icon">
+                            <img src="https://dspt.innogamescdn.com/asset/2a2f957f/graphic/unit/unit_${unit}.png" alt="${unit}">
+                        </div>
+                        <div class="vtc-unit-value">${this.#formatNumber(troopsObj[unit] || 0)}</div>
+                    </div>
+                `;
+            });
+            return html;
+        }
+
+        #renderSummaryCard(label, troopsObj, highlighted = false) {
+            return `
+                <div class="vtc-section-card ${highlighted ? 'is-highlighted' : ''}">
+                    <div class="vtc-section-title">${label}</div>
+                    <div class="vtc-unit-grid">
+                        ${this.#renderUnitGrid(troopsObj)}
+                    </div>
+                </div>
+            `;
+        }
+
         async #createUI() {
-            UI.InfoMessage(this.UserTranslation.loadingMessage);
+            UI.InfoMessage(this.t.loadingMessage);
 
             this.lastTroopsObj = this.isScavengingWorld
                 ? await this.#getTroopsScavengingWorldObj()
                 : await this.#getTroopsNonScavengingWorldObj();
 
             const totalTroops = this.#buildTotalTroopsObj(this.lastTroopsObj);
+            const currentGroupName = this.#getCurrentGroupName();
+            const groups = this.#getGroupsObj();
+
+            const groupsOptions = Object.entries(groups).map(([groupId, groupName]) => {
+                const selected = String(game_data.group_id) === String(groupId) ? 'selected' : '';
+                return `<option value="${groupId}" ${selected}>${groupName}</option>`;
+            }).join('');
 
             const html = `
-                <div>
-                    <br>
-                    <h3 style="position:relative;">${this.UserTranslation.title}</h3>
-                    ${getGroupsHtml(this)}
-                    <br><br>
-                    <table id="support_sum" class="vis overview_table" width="100%">
-                        <thead>
-                            ${getTroopsHeader(this.availableSupportUnits)}
-                        </thead>
-                        <tbody>
-                            ${this.isScavengingWorld ? getTroopsLine(this.UserTranslation.home, this.lastTroopsObj.villagesTroops) : ''}
-                            ${this.isScavengingWorld ? getTroopsLine(this.UserTranslation.scavenging, this.lastTroopsObj.scavengingTroops) : ''}
-                            ${getTroopsLine(this.UserTranslation.total, totalTroops)}
-                        </tbody>
-                    </table>
-                    <div style="text-align:center; margin-top:15px;">
-                        <button id="sendToDiscord" class="btn">${this.UserTranslation.sendDiscord}</button>
+                <div id="vtc-root">
+                    <style>
+                        #vtc-root{
+                            font-family: Arial, sans-serif;
+                            color:#e9eef7;
+                            min-width: 760px;
+                        }
+                        #vtc-root .vtc-shell{
+                            background: linear-gradient(180deg,#182131 0%,#101722 100%);
+                            border:1px solid #2a3750;
+                            border-radius:16px;
+                            box-shadow:0 12px 30px rgba(0,0,0,.35);
+                            overflow:hidden;
+                        }
+                        #vtc-root .vtc-header{
+                            padding:18px 20px 14px;
+                            background:linear-gradient(135deg,#24344d 0%,#1c2739 100%);
+                            border-bottom:1px solid #31405b;
+                        }
+                        #vtc-root .vtc-title{
+                            font-size:22px;
+                            font-weight:700;
+                            margin:0;
+                            color:#fff;
+                        }
+                        #vtc-root .vtc-subtitle{
+                            margin-top:6px;
+                            font-size:12px;
+                            color:#aebcd3;
+                        }
+                        #vtc-root .vtc-toolbar{
+                            display:flex;
+                            justify-content:space-between;
+                            gap:12px;
+                            align-items:center;
+                            padding:16px 20px;
+                            background:#121b29;
+                            border-bottom:1px solid #243146;
+                            flex-wrap:wrap;
+                        }
+                        #vtc-root .vtc-meta{
+                            display:flex;
+                            gap:12px;
+                            flex-wrap:wrap;
+                        }
+                        #vtc-root .vtc-badge{
+                            background:#1c2738;
+                            border:1px solid #2e405b;
+                            border-radius:999px;
+                            padding:8px 12px;
+                            font-size:12px;
+                            color:#dce6f7;
+                        }
+                        #vtc-root .vtc-badge strong{
+                            color:#fff;
+                        }
+                        #vtc-root .vtc-controls{
+                            display:flex;
+                            gap:10px;
+                            align-items:center;
+                            flex-wrap:wrap;
+                        }
+                        #vtc-root .vtc-select{
+                            background:#0f1622;
+                            color:#fff;
+                            border:1px solid #31425d;
+                            border-radius:10px;
+                            padding:9px 12px;
+                            min-width:220px;
+                            outline:none;
+                        }
+                        #vtc-root .vtc-btn{
+                            border:0;
+                            border-radius:10px;
+                            padding:10px 14px;
+                            color:#fff;
+                            cursor:pointer;
+                            font-weight:700;
+                            transition:.15s ease;
+                        }
+                        #vtc-root .vtc-btn:hover{
+                            transform:translateY(-1px);
+                            filter:brightness(1.05);
+                        }
+                        #vtc-root .vtc-btn-primary{
+                            background:linear-gradient(135deg,#4a8cff 0%,#2f6fe4 100%);
+                        }
+                        #vtc-root .vtc-btn-secondary{
+                            background:linear-gradient(135deg,#2f3d55 0%,#243146 100%);
+                        }
+                        #vtc-root .vtc-content{
+                            padding:18px;
+                            display:grid;
+                            gap:16px;
+                        }
+                        #vtc-root .vtc-section-card{
+                            background:linear-gradient(180deg,#182233 0%,#131b28 100%);
+                            border:1px solid #2c3a54;
+                            border-radius:14px;
+                            padding:16px;
+                        }
+                        #vtc-root .vtc-section-card.is-highlighted{
+                            border-color:#4a8cff;
+                            box-shadow:0 0 0 1px rgba(74,140,255,.15) inset;
+                        }
+                        #vtc-root .vtc-section-title{
+                            font-size:15px;
+                            font-weight:700;
+                            color:#fff;
+                            margin-bottom:12px;
+                        }
+                        #vtc-root .vtc-unit-grid{
+                            display:grid;
+                            grid-template-columns:repeat(auto-fit,minmax(80px,1fr));
+                            gap:10px;
+                        }
+                        #vtc-root .vtc-unit-card{
+                            background:#0f1622;
+                            border:1px solid #24324a;
+                            border-radius:12px;
+                            padding:10px 8px;
+                            text-align:center;
+                        }
+                        #vtc-root .vtc-unit-icon img{
+                            width:20px;
+                            height:20px;
+                            display:block;
+                            margin:0 auto 8px;
+                        }
+                        #vtc-root .vtc-unit-value{
+                            font-size:14px;
+                            font-weight:700;
+                            color:#f3f7ff;
+                        }
+                        #vtc-root .vtc-footer{
+                            padding:0 20px 18px;
+                            color:#8fa3c2;
+                            font-size:11px;
+                        }
+                        .popup_box_content{
+                            min-width:unset !important;
+                        }
+                        @media (max-width: 820px){
+                            #vtc-root{
+                                min-width: unset;
+                            }
+                            #vtc-root .vtc-toolbar{
+                                align-items:flex-start;
+                            }
+                        }
+                    </style>
+
+                    <div class="vtc-shell">
+                        <div class="vtc-header">
+                            <h3 class="vtc-title">${this.t.title}</h3>
+                            <div class="vtc-subtitle">${this.t.subtitle}</div>
+                        </div>
+
+                        <div class="vtc-toolbar">
+                            <div class="vtc-meta">
+                                <div class="vtc-badge"><strong>${this.t.group}:</strong> ${currentGroupName}</div>
+                                <div class="vtc-badge"><strong>Player:</strong> ${game_data.player.name}</div>
+                                <div class="vtc-badge"><strong>Server:</strong> ${this.#getServerTime()}</div>
+                            </div>
+
+                            <div class="vtc-controls">
+                                <select id="vtc-group-select" class="vtc-select">
+                                    ${groupsOptions}
+                                </select>
+                                <button id="vtc-refresh" class="vtc-btn vtc-btn-secondary">${this.t.refresh}</button>
+                                <button id="vtc-send-discord" class="vtc-btn vtc-btn-primary">${this.t.sendDiscord}</button>
+                            </div>
+                        </div>
+
+                        <div class="vtc-content">
+                            ${this.isScavengingWorld ? this.#renderSummaryCard(this.t.home, this.lastTroopsObj.villagesTroops) : ''}
+                            ${this.isScavengingWorld ? this.#renderSummaryCard(this.t.scavenging, this.lastTroopsObj.scavengingTroops) : ''}
+                            ${this.#renderSummaryCard(this.t.total, totalTroops, true)}
+                        </div>
+
+                        <div class="vtc-footer">${this.t.credits}</div>
                     </div>
                 </div>
-                <style>
-                    .popup_box_content { min-width: 600px; }
-                    .mds .popup_box_content { min-width: unset !important; }
-                    #sendToDiscord { margin-top: 10px; }
-                </style>
-                <br>
-                <span style="font-weight:bold;font-size:10px;">${this.UserTranslation.credits}</span>
             `;
 
-            Dialog.show('import', html);
-            $('#popup_box_import').css('width', 'unset');
+            Dialog.show(DIALOG_ID, html);
+            $('#popup_box_' + DIALOG_ID).css('width', 'auto');
 
-            UI.SuccessMessage(this.UserTranslation.successMessage, 500);
-
-            $('#sendToDiscord').off('click').on('click', () => {
+            $(document).off('click.' + SCRIPT_NS, '#vtc-send-discord');
+            $(document).on('click.' + SCRIPT_NS, '#vtc-send-discord', () => {
                 this.#sendToDiscord(totalTroops);
             });
 
-            function getGroupsHtml(objInstance) {
-                const groups = objInstance.#getGroupsObj();
-                let html = '';
+            $(document).off('click.' + SCRIPT_NS, '#vtc-refresh');
+            $(document).on('click.' + SCRIPT_NS, '#vtc-refresh', async () => {
+                try { Dialog.close(); } catch (e) {}
+                await this.#createUI();
+            });
 
-                $.each(groups, function (groupId, group) {
-                    const selected = String(game_data.group_id) === String(groupId) ? 'selected' : '';
-                    html += `<option value="${groupId}" ${selected}>${group}</option>`;
-                });
+            $(document).off('change.' + SCRIPT_NS, '#vtc-group-select');
+            $(document).on('change.' + SCRIPT_NS, '#vtc-group-select', async (ev) => {
+                const selectedGroup = $(ev.currentTarget).val();
+                await this.changeGroup(selectedGroup);
+            });
 
-                return `<select onchange="window.villagesTroopsCounter.changeGroup(this)">${html}</select>`;
-            }
-
-            function getTroopsLine(label, troopsObj) {
-                let html = `<tr><td class="center" style="text-wrap: nowrap;">${label}</td>`;
-                $.each(troopsObj, function (key, value) {
-                    html += `<td class="center" data-unit="${key}">${value}</td>`;
-                });
-                html += `</tr>`;
-                return html;
-            }
-
-            function getTroopsHeader(availableSupportUnits) {
-                let html = `<tr><th class="center" style="width:0px;"></th>`;
-                $.each(availableSupportUnits, function (_, value) {
-                    html += `<th style="text-align:center" width="35">
-                        <a href="#" class="unit_link" data-unit="${value}">
-                            <img src="https://dspt.innogamescdn.com/asset/2a2f957f/graphic/unit/unit_${value}.png">
-                        </a>
-                    </th>`;
-                });
-                html += `</tr>`;
-                return html;
-            }
+            UI.SuccessMessage(this.t.successMessage, 500);
         }
 
-        async changeGroup(obj) {
-            this.#fetchHtmlPage(this.#generateUrl('overview_villages', null, { group: obj.value }));
-            game_data.group_id = obj.value;
+        async changeGroup(groupId) {
+            this.#fetchHtmlPage(this.#generateUrl('overview_villages', null, { group: groupId }));
+            game_data.group_id = groupId;
             try { Dialog.close(); } catch (e) {}
             await this.#createUI();
         }
-    };
+    }
 
     window.villagesTroopsCounter = new VillagesTroopsCounter();
     window.villagesTroopsCounter.init();
