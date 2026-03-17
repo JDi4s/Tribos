@@ -556,169 +556,420 @@
 
             const html = `
 <div id="dd-root">
-    <div class="dd-head">
-        <h3>${this.UserTranslation.title}</h3>
-        <div class="dd-sub">${this.UserTranslation.subtitle}</div>
-    </div>
-
-    <div class="dd-toolbar">
-        <div class="dd-meta">
-            <span><b>${this.UserTranslation.group}:</b> ${this.#getCurrentGroupName()}</span>
-            <span><b>${this.UserTranslation.player}:</b> ${game_data.player.name}</span>
-            <span><b>${this.UserTranslation.server}:</b> ${this.#getServerTime()}</span>
+    <div class="dd-shell">
+        <div class="dd-header">
+            <div class="dd-header-left">
+                <div class="dd-kicker">Tribal Wars</div>
+                <h3>${this.UserTranslation.title}</h3>
+                <div class="dd-sub">${this.UserTranslation.subtitle}</div>
+            </div>
+            <div class="dd-header-right">
+                <div class="dd-stamp">${this.#getServerTime()}</div>
+            </div>
         </div>
-        <div class="dd-actions">
-            ${getGroupsHtml(this)}
-            <button id="dd-refresh">${this.UserTranslation.refresh}</button>
-            <button id="dd-send-discord">${this.UserTranslation.sendDiscord}</button>
+
+        <div class="dd-topbar">
+            <div class="dd-meta">
+                <div class="dd-pill">
+                    <span class="dd-pill-label">${this.UserTranslation.group}</span>
+                    <strong>${this.#getCurrentGroupName()}</strong>
+                </div>
+                <div class="dd-pill">
+                    <span class="dd-pill-label">${this.UserTranslation.player}</span>
+                    <strong>${game_data.player.name}</strong>
+                </div>
+                <div class="dd-pill">
+                    <span class="dd-pill-label">${this.UserTranslation.server}</span>
+                    <strong>${game_data.world}</strong>
+                </div>
+            </div>
+
+            <div class="dd-actions">
+                ${getGroupsHtml(this)}
+                <button id="dd-refresh" class="dd-btn dd-btn-secondary">${this.UserTranslation.refresh}</button>
+                <button id="dd-send-discord" class="dd-btn dd-btn-primary">${this.UserTranslation.sendDiscord}</button>
+            </div>
         </div>
-    </div>
 
-    <div class="dd-nukes">
-        <div class="dd-nuke-card dd-full">
-            <div class="dd-nuke-icon">🚀</div>
-            <div class="dd-nuke-value">${nukeStatus.full}</div>
-            <div class="dd-nuke-label">${this.UserTranslation.full}</div>
+        <div class="dd-cards">
+            <div class="dd-card dd-stat dd-full">
+                <div class="dd-stat-icon">🚀</div>
+                <div class="dd-stat-value">${nukeStatus.full}</div>
+                <div class="dd-stat-label">${this.UserTranslation.full}</div>
+            </div>
+            <div class="dd-card dd-stat dd-semi">
+                <div class="dd-stat-icon">📈</div>
+                <div class="dd-stat-value">${nukeStatus.semi}</div>
+                <div class="dd-stat-label">${this.UserTranslation.semi}</div>
+            </div>
+            <div class="dd-card dd-stat dd-rec">
+                <div class="dd-stat-icon">🛠️</div>
+                <div class="dd-stat-value">${nukeStatus.rebuilding}</div>
+                <div class="dd-stat-label">${this.UserTranslation.rebuilding}</div>
+            </div>
         </div>
-        <div class="dd-nuke-card dd-semi">
-            <div class="dd-nuke-icon">📈</div>
-            <div class="dd-nuke-value">${nukeStatus.semi}</div>
-            <div class="dd-nuke-label">${this.UserTranslation.semi}</div>
+
+        <div class="dd-grid">
+            <div class="dd-panel dd-panel-large">
+                <div class="dd-panel-head">
+                    <h4>Resumo Total</h4>
+                    <span class="dd-panel-note">${this.isScavengingWorld ? 'Casa + Busca' : 'Em casa'}</span>
+                </div>
+                <div class="dd-table-wrap">
+                    <table id="support_sum" class="vis overview_table dd-table-modern" width="100%">
+                        <thead>
+                            ${getTroopsHeader(this.availableUnits)}
+                        </thead>
+                        <tbody>
+                            ${this.isScavengingWorld ? getTroopsLine(this.UserTranslation.home, troopsObj.villagesTroops) : ''}
+                            ${this.isScavengingWorld ? getTroopsLine(this.UserTranslation.scavenging, troopsObj.scavengingTroops) : ''}
+                            ${getTroopsLine(this.UserTranslation.total, troopsObj, 1)}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="dd-panel">
+                <div class="dd-panel-head">
+                    <h4>${this.UserTranslation.defensiveTotal}</h4>
+                </div>
+                <div class="dd-def-grid">
+                    ${renderDefCard('spear', visibleDefensiveTroops.spear)}
+                    ${renderDefCard('sword', visibleDefensiveTroops.sword)}
+                    ${game_data.units.includes('archer') ? renderDefCard('archer', visibleDefensiveTroops.archer) : ''}
+                    ${renderDefCard('spy', visibleDefensiveTroops.spy)}
+                    ${renderDefCard('heavy', visibleDefensiveTroops.heavy)}
+                    ${renderDefCard('catapult', visibleDefensiveTroops.catapult)}
+                    ${game_data.units.includes('knight') ? renderDefCard('knight', visibleDefensiveTroops.knight) : ''}
+                </div>
+            </div>
         </div>
-        <div class="dd-nuke-card dd-rec">
-            <div class="dd-nuke-icon">🛠️</div>
-            <div class="dd-nuke-value">${nukeStatus.rebuilding}</div>
-            <div class="dd-nuke-label">${this.UserTranslation.rebuilding}</div>
+
+        <div class="dd-panel dd-panel-bb">
+            <div class="dd-panel-head">
+                <h4>Exportar Contagem de Tropas</h4>
+                <button id="dd-copy-bbcode" class="dd-btn dd-btn-secondary">Copiar</button>
+            </div>
+            <textarea readonly id="dd-bbcode-area">${bbCode.trim()}</textarea>
         </div>
+
+        <div class="dd-footer">${this.UserTranslation.credits}</div>
     </div>
-
-    <table id="support_sum" class="vis overview_table" width="100%">
-        <thead>
-            ${getTroopsHeader(this.availableUnits)}
-        </thead>
-        <tbody>
-            ${this.isScavengingWorld ? getTroopsLine(this.UserTranslation.home, troopsObj.villagesTroops) : ''}
-            ${this.isScavengingWorld ? getTroopsLine(this.UserTranslation.scavenging, troopsObj.scavengingTroops) : ''}
-            ${getTroopsLine(this.UserTranslation.total, troopsObj, 1)}
-        </tbody>
-    </table>
-
-    <div class="dd-def">
-        <h4>${this.UserTranslation.defensiveTotal}</h4>
-        <table class="vis overview_table" width="100%">
-            <thead>
-                <tr>
-                    <th><img src="/graphic/unit/unit_spear.webp"></th>
-                    <th><img src="/graphic/unit/unit_sword.webp"></th>
-                    ${game_data.units.includes('archer') ? '<th><img src="/graphic/unit/unit_archer.webp"></th>' : ''}
-                    <th><img src="/graphic/unit/unit_spy.webp"></th>
-                    <th><img src="/graphic/unit/unit_heavy.webp"></th>
-                    <th><img src="/graphic/unit/unit_catapult.webp"></th>
-                    ${game_data.units.includes('knight') ? '<th><img src="/graphic/unit/unit_knight.webp"></th>' : ''}
-                </tr>
-            </thead>
-            <tbody>
-                <tr style="text-align:center">
-                    <td>${this.#formatNumber(visibleDefensiveTroops.spear)}</td>
-                    <td>${this.#formatNumber(visibleDefensiveTroops.sword)}</td>
-                    ${game_data.units.includes('archer') ? `<td>${this.#formatNumber(visibleDefensiveTroops.archer)}</td>` : ''}
-                    <td>${this.#formatNumber(visibleDefensiveTroops.spy)}</td>
-                    <td>${this.#formatNumber(visibleDefensiveTroops.heavy)}</td>
-                    <td>${this.#formatNumber(visibleDefensiveTroops.catapult)}</td>
-                    ${game_data.units.includes('knight') ? `<td>${this.#formatNumber(visibleDefensiveTroops.knight)}</td>` : ''}
-                </tr>
-            </tbody>
-        </table>
-    </div>
-
-    <div class="dd-bbcode">
-        <h4>Exportar Contagem de Tropas</h4>
-        <textarea readonly id="dd-bbcode-area">${bbCode.trim()}</textarea>
-    </div>
-
-    <br>
-    <span style="font-weight:bold;font-size:10px;">${this.UserTranslation.credits}</span>
 </div>
 
 <style>
-.popup_box_content { min-width: 820px; }
-.mds .popup_box_content { min-width: unset !important; }
+.popup_box_content {
+    min-width: 980px;
+    background: transparent !important;
+}
+.mds .popup_box_content {
+    min-width: unset !important;
+}
 
-#dd-root h3 { margin: 0; }
-#dd-root .dd-head { margin-bottom: 12px; }
-#dd-root .dd-sub { color: #666; font-size: 11px; margin-top: 4px; }
+#dd-root {
+    color: #f3e9d2;
+    font-family: Arial, sans-serif;
+}
 
-#dd-root .dd-toolbar {
-    display:flex;
-    justify-content:space-between;
-    align-items:center;
-    gap:12px;
-    flex-wrap:wrap;
-    margin-bottom:15px;
+#dd-root .dd-shell {
+    background: linear-gradient(180deg, rgba(34,24,17,.96) 0%, rgba(23,16,11,.98) 100%);
+    border: 1px solid #6d5231;
+    border-radius: 18px;
+    box-shadow: 0 18px 45px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.04);
+    overflow: hidden;
+}
+
+#dd-root .dd-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    padding: 20px 22px;
+    background: linear-gradient(135deg, rgba(88,57,29,.95) 0%, rgba(59,37,20,.97) 100%);
+    border-bottom: 1px solid #7c5b36;
+}
+
+#dd-root .dd-kicker {
+    color: #d6b98a;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .12em;
+    margin-bottom: 6px;
+}
+
+#dd-root h3 {
+    margin: 0;
+    font-size: 24px;
+    color: #fff3da;
+}
+
+#dd-root .dd-sub {
+    margin-top: 6px;
+    color: #d9c4a0;
+    font-size: 12px;
+}
+
+#dd-root .dd-stamp {
+    background: rgba(0,0,0,.18);
+    border: 1px solid rgba(255,255,255,.08);
+    color: #f6e7c9;
+    padding: 10px 12px;
+    border-radius: 12px;
+    font-weight: 700;
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+#dd-root .dd-topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+    padding: 16px 22px;
+    background: rgba(0,0,0,.18);
+    border-bottom: 1px solid rgba(255,255,255,.05);
 }
 
 #dd-root .dd-meta {
-    display:flex;
-    gap:10px;
-    flex-wrap:wrap;
-    font-size:12px;
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+#dd-root .dd-pill {
+    background: linear-gradient(180deg, #3a2819 0%, #2b1d12 100%);
+    border: 1px solid #6b4f31;
+    border-radius: 999px;
+    padding: 8px 12px;
+    color: #f2e1c0;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+#dd-root .dd-pill-label {
+    color: #c9ae80;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .04em;
 }
 
 #dd-root .dd-actions {
-    display:flex;
-    gap:8px;
-    align-items:center;
-    flex-wrap:wrap;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
 }
 
-#dd-root .dd-actions select,
-#dd-root .dd-actions button {
-    height: 32px;
-}
-
-#dd-root .dd-actions button {
+#dd-root .dd-actions select {
+    height: 38px;
+    border-radius: 10px;
+    border: 1px solid #6d5231;
+    background: #21160e;
+    color: #f6e8cb;
     padding: 0 12px;
-    border: 1px solid #7d510f;
-    background: linear-gradient(to bottom,#f4e4bc 0%,#d7c08a 100%);
+    min-width: 220px;
+    outline: none;
+}
+
+#dd-root .dd-btn {
+    height: 38px;
+    padding: 0 14px;
+    border-radius: 10px;
+    border: 1px solid #7d5b33;
     cursor: pointer;
-    font-weight: bold;
-    border-radius: 4px;
+    font-weight: 700;
+    transition: .15s ease;
 }
 
-#dd-root .dd-nukes {
-    display:flex;
-    gap:12px;
-    margin: 12px 0 16px;
-    flex-wrap:wrap;
+#dd-root .dd-btn:hover {
+    transform: translateY(-1px);
+    filter: brightness(1.04);
 }
 
-#dd-root .dd-nuke-card {
-    flex: 1 1 150px;
-    text-align:center;
-    padding:12px;
-    border-radius:6px;
-    color:#fff;
-    font-weight:bold;
+#dd-root .dd-btn-secondary {
+    background: linear-gradient(180deg, #4d3723 0%, #372517 100%);
+    color: #f5e6c8;
 }
 
-#dd-root .dd-full { background:#8b0000; }
-#dd-root .dd-semi { background:#cd5c5c; }
-#dd-root .dd-rec  { background:#777; }
-
-#dd-root .dd-nuke-icon { font-size:18px; margin-bottom:4px; }
-#dd-root .dd-nuke-value { font-size:22px; }
-#dd-root .dd-nuke-label { font-size:12px; margin-top:4px; }
-
-#dd-root .dd-def h4,
-#dd-root .dd-bbcode h4 {
-    margin: 14px 0 8px;
+#dd-root .dd-btn-primary {
+    background: linear-gradient(180deg, #b8863b 0%, #8d6228 100%);
+    color: #fff8ea;
+    border-color: #c89b53;
 }
 
-#dd-bbcode-area {
+#dd-root .dd-cards {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+    padding: 18px 22px 0;
+}
+
+#dd-root .dd-card {
+    border-radius: 16px;
+    padding: 16px;
+    border: 1px solid rgba(255,255,255,.08);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
+}
+
+#dd-root .dd-stat {
+    text-align: center;
+}
+
+#dd-root .dd-full {
+    background: linear-gradient(180deg, #7d1f1f 0%, #5f1717 100%);
+}
+
+#dd-root .dd-semi {
+    background: linear-gradient(180deg, #a94e39 0%, #82402e 100%);
+}
+
+#dd-root .dd-rec {
+    background: linear-gradient(180deg, #5c5c5c 0%, #444 100%);
+}
+
+#dd-root .dd-stat-icon {
+    font-size: 20px;
+    margin-bottom: 6px;
+}
+
+#dd-root .dd-stat-value {
+    font-size: 28px;
+    font-weight: 800;
+    color: #fff;
+}
+
+#dd-root .dd-stat-label {
+    margin-top: 4px;
+    font-size: 12px;
+    color: rgba(255,255,255,.9);
+}
+
+#dd-root .dd-grid {
+    display: grid;
+    grid-template-columns: 1.4fr .9fr;
+    gap: 16px;
+    padding: 18px 22px;
+}
+
+#dd-root .dd-panel {
+    background: linear-gradient(180deg, #2d1f14 0%, #21160e 100%);
+    border: 1px solid #644a2d;
+    border-radius: 16px;
+    padding: 16px;
+}
+
+#dd-root .dd-panel-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+#dd-root .dd-panel-head h4 {
+    margin: 0;
+    color: #fff1d5;
+    font-size: 16px;
+}
+
+#dd-root .dd-panel-note {
+    color: #c8ae82;
+    font-size: 11px;
+    text-transform: uppercase;
+}
+
+#dd-root .dd-table-wrap {
+    overflow-x: auto;
+    border-radius: 12px;
+}
+
+#dd-root .dd-table-modern {
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+#dd-root .dd-table-modern th {
+    background: linear-gradient(180deg, #6b4a26 0%, #53381d 100%) !important;
+}
+
+#dd-root .dd-table-modern td {
+    background: #2a1d13 !important;
+    color: #f6e8cb;
+}
+
+#dd-root .dd-def-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(95px, 1fr));
+    gap: 10px;
+}
+
+#dd-root .dd-unit-card {
+    background: linear-gradient(180deg, #3a2819 0%, #2a1d13 100%);
+    border: 1px solid #62492c;
+    border-radius: 14px;
+    padding: 12px 8px;
+    text-align: center;
+}
+
+#dd-root .dd-unit-card img {
+    width: 22px;
+    height: 22px;
+    display: block;
+    margin: 0 auto 8px;
+}
+
+#dd-root .dd-unit-value {
+    font-size: 15px;
+    font-weight: 800;
+    color: #fff1d7;
+}
+
+#dd-root .dd-unit-name {
+    margin-top: 4px;
+    font-size: 11px;
+    color: #cbb186;
+}
+
+#dd-root .dd-panel-bb {
+    margin: 0 22px 18px;
+}
+
+#dd-root #dd-bbcode-area {
     width: 100%;
-    min-height: 120px;
+    min-height: 130px;
     resize: vertical;
     box-sizing: border-box;
+    border-radius: 12px;
+    border: 1px solid #644a2d;
+    background: #17100b;
+    color: #f1e2c6;
+    padding: 12px;
+    font-family: Consolas, monospace;
+}
+
+#dd-root .dd-footer {
+    padding: 0 22px 18px;
+    color: #a98d64;
+    font-size: 11px;
+}
+
+@media (max-width: 980px) {
+    .popup_box_content {
+        min-width: unset;
+    }
+
+    #dd-root .dd-cards,
+    #dd-root .dd-grid {
+        grid-template-columns: 1fr;
+    }
+
+    #dd-root .dd-header,
+    #dd-root .dd-topbar {
+        flex-direction: column;
+        align-items: stretch;
+    }
 }
 </style>
 `;
@@ -735,6 +986,17 @@
             $(document).on('click.' + SCRIPT_NS, '#dd-refresh', async () => {
                 try { Dialog.close(); } catch (e) {}
                 await this.#createUI();
+            });
+
+            $(document).off('click.' + SCRIPT_NS, '#dd-copy-bbcode');
+            $(document).on('click.' + SCRIPT_NS, '#dd-copy-bbcode', async () => {
+                const text = $('#dd-bbcode-area').val();
+                try {
+                    await navigator.clipboard.writeText(text);
+                    UI.SuccessMessage('BBCode copiado!', 1500);
+                } catch (e) {
+                    $('#dd-bbcode-area').trigger('select');
+                }
             });
 
             UI.SuccessMessage(this.UserTranslation.successMessage, 500);
@@ -773,6 +1035,26 @@
                 });
                 html += `</tr>`;
                 return html;
+            }
+
+            function renderDefCard(unit, value) {
+                const labels = {
+                    spear: 'Lanceiros',
+                    sword: 'Espadas',
+                    archer: 'Arqueiros',
+                    spy: 'Batedores',
+                    heavy: 'Pesadas',
+                    catapult: 'Catas',
+                    knight: 'Paladino'
+                };
+
+                return `
+                    <div class="dd-unit-card">
+                        <img src="https://dspt.innogamescdn.com/asset/2a2f957f/graphic/unit/unit_${unit}.png" alt="${unit}">
+                        <div class="dd-unit-value">${new Intl.NumberFormat('pt-PT').format(Number(value || 0))}</div>
+                        <div class="dd-unit-name">${labels[unit] || unit}</div>
+                    </div>
+                `;
             }
         }
 
