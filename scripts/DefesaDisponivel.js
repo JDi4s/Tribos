@@ -22,7 +22,6 @@
                     server: 'Server',
                     refresh: 'Refresh',
                     sendDiscord: 'Send to Discord',
-                    nukeStatus: 'Offensive Status (Villages)',
                     full: 'Fulls',
                     semi: 'Semis',
                     rebuilding: 'Rebuilding',
@@ -44,8 +43,6 @@
                     successMessage: 'Loaded successfully!',
                     loadingMessage: 'Loading...',
                     loadingWorldConfigMessage: 'Loading world config...',
-                    discordSuccess: 'Sent to Discord successfully!',
-                    discordError: 'Error sending data to Discord.',
                     credits: 'Defesa Disponível by JDi4s'
                 },
                 pt_PT: {
@@ -60,7 +57,6 @@
                     server: 'Servidor',
                     refresh: 'Atualizar',
                     sendDiscord: 'Enviar para Discord',
-                    nukeStatus: 'Estado de Ataque (Aldeias)',
                     full: 'Fulls',
                     semi: 'Semis',
                     rebuilding: 'A recrutar',
@@ -82,8 +78,6 @@
                     successMessage: 'Carregado com sucesso!',
                     loadingMessage: 'A carregar...',
                     loadingWorldConfigMessage: 'A carregar configurações do mundo...',
-                    discordSuccess: 'Enviado para o Discord com sucesso!',
-                    discordError: 'Erro ao enviar dados para o Discord.',
                     credits: 'Defesa Disponível by JDi4s'
                 }
             };
@@ -359,6 +353,99 @@
             return groupsArr;
         }
 
+        #normalizeGroupName(name) {
+            return String(name || '')
+                .toLowerCase()
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '')
+                .trim();
+        }
+
+        async #countVillagesInGroup(groupId) {
+            let totalVillages = 0;
+            let currentPage = 0;
+            let lastRunTime = Date.now();
+
+            await this.#setMaxLinesPerPage('overview_villages', 'units', 1000);
+            await this.#waitMilliseconds(lastRunTime, 200);
+
+            let lastVillageId = null;
+
+            do {
+                lastRunTime = Date.now();
+
+                const rawPage = this.#fetchHtmlPage(
+                    this.#generateUrl('overview_villages', 'units', {
+                        page: currentPage,
+                        group: groupId
+                    })
+                );
+
+                if (!rawPage) break;
+
+                const overviewTroopsPage = $.parseHTML(rawPage);
+                const troopsTable = $(overviewTroopsPage).find('#units_table tbody');
+                if (!troopsTable.length) break;
+
+                const lastVillageIdTemp = $(troopsTable).find('span').eq(0).attr('data-id');
+                if (!lastVillageIdTemp) break;
+
+                if (lastVillageId !== null && lastVillageId === lastVillageIdTemp) break;
+                lastVillageId = lastVillageIdTemp;
+
+                totalVillages += troopsTable.length;
+
+                currentPage++;
+                await this.#waitMilliseconds(lastRunTime, 200);
+            } while (true);
+
+            return totalVillages;
+        }
+
+        async #getOffensiveStatusFromGroups() {
+            const groups = this.#getGroupsObj();
+            let fullGroupId = null;
+            let semiGroupId = null;
+            let rebuildGroupId = null;
+
+            $.each(groups, function (groupId, groupName) {
+                const normalized = String(groupName || '')
+                    .toLowerCase()
+                    .normalize('NFD')
+                    .replace(/[\u0300-\u036f]/g, '')
+                    .trim();
+
+                if (fullGroupId === null && normalized.includes('full')) {
+                    fullGroupId = groupId;
+                }
+
+                if (semiGroupId === null && normalized.includes('semi')) {
+                    semiGroupId = groupId;
+                }
+
+                if (
+                    rebuildGroupId === null &&
+                    (
+                        normalized.includes('rebuild') ||
+                        normalized.includes('recrutar') ||
+                        normalized.includes('a recrutar')
+                    )
+                ) {
+                    rebuildGroupId = groupId;
+                }
+            });
+
+            if (fullGroupId === null && semiGroupId === null && rebuildGroupId === null) {
+                return null;
+            }
+
+            return {
+                full: fullGroupId !== null ? await this.#countVillagesInGroup(fullGroupId) : 0,
+                semi: semiGroupId !== null ? await this.#countVillagesInGroup(semiGroupId) : 0,
+                rebuilding: rebuildGroupId !== null ? await this.#countVillagesInGroup(rebuildGroupId) : 0
+            };
+        }
+
         #buildTotalTroopsObj(troopsObj) {
             const merged = {};
             $.each(troopsObj.villagesTroops, function (key, value) {
@@ -401,18 +488,18 @@
         #calculateNukeStatusByVillageArray(villagesArray) {
             const status = { full: 0, semi: 0, rebuilding: 0 };
 
-         villagesArray.forEach(v => {
-    const pop = this.#calculateOffensivePop(v);
-    const axes = v.axe || 0;
+            villagesArray.forEach(v => {
+                const pop = this.#calculateOffensivePop(v);
+                const axes = v.axe || 0;
 
-    if (pop >= 20000 && axes > 500) {
-        status.full++;
-    } else if (pop >= 16000 && pop < 20000 && axes > 500) {
-        status.semi++;
-    } else if (pop < 16000 && axes > 500) {
-        status.rebuilding++;
-    }
-});
+                if (pop > 20000 && axes > 500) {
+                    status.full++;
+                } else if (pop > 16000 && pop < 20000 && axes > 500) {
+                    status.semi++;
+                } else if (pop <= 16000 && axes > 500) {
+                    status.rebuilding++;
+                }
+            });
 
             return status;
         }
@@ -468,6 +555,11 @@
         }
 
         async #getNukeStatus() {
+            const groupBasedStatus = await this.#getOffensiveStatusFromGroups();
+            if (groupBasedStatus !== null) {
+                return groupBasedStatus;
+            }
+
             const villagesArray = await this.#getVillageRowsForNukes();
             return this.#calculateNukeStatusByVillageArray(villagesArray);
         }
