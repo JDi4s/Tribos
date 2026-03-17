@@ -9,7 +9,7 @@ var scriptConfig = {
     scriptData: {
         prefix: 'ownHomeTroopsCount',
         name: 'Own Home Troops Count (Home + Scavenging)',
-        version: 'v7 ajax scavenging fix',
+        version: 'v8 nuno logic fix',
         author: 'RedAlert + edit',
         authorUrl: 'https://twscripts.dev/',
         helpLink: 'https://forum.tribalwars.net/index.php?threads/own-home-troops-count.286618/'
@@ -63,11 +63,11 @@ $.getScript(
         })();
 
         async function buildUI() {
-            const homeTroops = collectTroopsAtHome();
-            const totalHome = getTotalHomeTroops(homeTroops);
-
-            const scavengingTroops = await getScavengingTroops();
-            const totalCombined = mergeTroops(totalHome, scavengingTroops);
+            const troopsObj = await getTroopsObject();
+            const totalCombined = mergeTroops(
+                troopsObj.villagesTroops,
+                troopsObj.scavengingTroops
+            );
 
             const bbCode = getTroopsBBCode(totalCombined);
             const content = prepareContent(totalCombined, bbCode);
@@ -87,6 +87,159 @@ $.getScript(
                     jQuery('.paladin-world').hide();
                 }
             }, 100);
+        }
+
+        function initTroops() {
+            const troops = {
+                spear: 0,
+                sword: 0,
+                axe: 0,
+                archer: 0,
+                spy: 0,
+                light: 0,
+                marcher: 0,
+                heavy: 0,
+                ram: 0,
+                catapult: 0,
+                knight: 0,
+                snob: 0
+            };
+
+            if (!game_data.units.includes('archer')) {
+                delete troops.archer;
+                delete troops.marcher;
+            }
+
+            if (!game_data.units.includes('knight')) {
+                delete troops.knight;
+            }
+
+            return troops;
+        }
+
+        async function getTroopsObject() {
+            const isScavengingWorld = await checkScavengingWorld();
+
+            if (isScavengingWorld) {
+                return await getTroopsScavengingWorldObj();
+            }
+
+            return getTroopsNonScavengingWorldObj();
+        }
+
+        async function checkScavengingWorld() {
+            try {
+                const configXml = await jQuery.get('/interface.php?func=get_config');
+                const xml = jQuery.parseXML(configXml);
+                const scavengingNode = xml.getElementsByTagName('config')[0]
+                    .getElementsByTagName('game')[0]
+                    .getElementsByTagName('scavenging')[0];
+
+                return scavengingNode && scavengingNode.textContent.trim() === '1';
+            } catch (e) {
+                console.error('Erro ao verificar se o mundo tem buscas:', e);
+                return false;
+            }
+        }
+
+        async function getTroopsScavengingWorldObj() {
+            const troopsObj = {
+                villagesTroops: initTroops(),
+                scavengingTroops: initTroops()
+            };
+
+            let currentPage = 0;
+            let lastRunTime = 0;
+
+            while (true) {
+                const scavengingObject = await getScavengeMassScreenJson(currentPage, lastRunTime);
+
+                if (scavengingObject === false) {
+                    break;
+                }
+
+                if (!scavengingObject.length) {
+                    break;
+                }
+
+                lastRunTime = Date.now();
+
+                jQuery.each(scavengingObject, function (_, villageData) {
+                    if (villageData.unit_counts_home) {
+                        jQuery.each(villageData.unit_counts_home, function (key, value) {
+                            if (key !== 'militia' && Object.prototype.hasOwnProperty.call(troopsObj.villagesTroops, key)) {
+                                troopsObj.villagesTroops[key] += parseInt(value, 10) || 0;
+                            }
+                        });
+                    }
+
+                    if (villageData.options) {
+                        jQuery.each(villageData.options, function (_, option) {
+                            if (option.scavenging_squad !== null && option.scavenging_squad && option.scavenging_squad.unit_counts) {
+                                jQuery.each(option.scavenging_squad.unit_counts, function (key, value) {
+                                    if (key !== 'militia' && Object.prototype.hasOwnProperty.call(troopsObj.scavengingTroops, key)) {
+                                        troopsObj.scavengingTroops[key] += parseInt(value, 10) || 0;
+                                    }
+                                });
+                            }
+                        });
+                    }
+                });
+
+                currentPage++;
+            }
+
+            return troopsObj;
+        }
+
+        async function getScavengeMassScreenJson(currentPage = 0, lastRunTime = 0) {
+            await waitMilliseconds(lastRunTime, 200);
+
+            let url = `/game.php?village=${game_data.village.id}&screen=place&mode=scavenge_mass&page=${currentPage}`;
+            if (game_data.player.sitter !== "0") {
+                url += `&t=${game_data.player.id}`;
+            }
+
+            try {
+                const html = await jQuery.get(url);
+                let matches = html.match(/ScavengeMassScreen[\s\S]*?(,\n *\[.*?\}{0,3}\],\n)/);
+
+                if (!matches || matches.length <= 1) {
+                    return false;
+                }
+
+                matches = matches[1];
+                matches = matches.substring(matches.indexOf('['));
+                matches = matches.substring(0, matches.length - 2);
+
+                return JSON.parse(matches);
+            } catch (e) {
+                console.error('Erro ao carregar scavenge_mass:', e);
+                return false;
+            }
+        }
+
+        function getTroopsNonScavengingWorldObj() {
+            const troopsObj = {
+                villagesTroops: initTroops(),
+                scavengingTroops: initTroops()
+            };
+
+            const homeTroops = collectTroopsAtHome();
+
+            homeTroops.forEach(obj => {
+                Object.keys(troopsObj.villagesTroops).forEach(unit => {
+                    troopsObj.villagesTroops[unit] += obj[unit] || 0;
+                });
+            });
+
+            return troopsObj;
+        }
+
+        async function waitMilliseconds(lastRunTime, milliseconds = 0) {
+            await new Promise(resolve =>
+                setTimeout(resolve, Math.max(lastRunTime + milliseconds - Date.now(), 0))
+            );
         }
 
         function prepareContent(totalTroops, bbCode) {
@@ -190,103 +343,14 @@ $.getScript(
             return homeTroops;
         }
 
-        function getTotalHomeTroops(homeTroops) {
-            const totals = {
-                spear: 0, sword: 0, axe: 0, archer: 0, spy: 0, light: 0,
-                marcher: 0, heavy: 0, ram: 0, catapult: 0, knight: 0, snob: 0
-            };
-
-            homeTroops.forEach(obj => {
-                Object.keys(totals).forEach(unit => {
-                    totals[unit] += obj[unit] || 0;
-                });
-            });
-
-            if (!game_data.units.includes('archer')) {
-                delete totals.archer;
-                delete totals.marcher;
-            }
-
-            if (!game_data.units.includes('knight')) {
-                delete totals.knight;
-            }
-
-            return totals;
-        }
-
-        async function getScavengingTroops() {
-            const troops = {
-                spear: 0, sword: 0, axe: 0, archer: 0, spy: 0,
-                light: 0, marcher: 0, heavy: 0, ram: 0,
-                catapult: 0, knight: 0, snob: 0
-            };
-
-            let page = 0;
-
-            while (true) {
-                try {
-                    let url = `/game.php?village=${game_data.village.id}&screen=place&mode=scavenge_mass&page=${page}`;
-                    if (game_data.player.sitter !== "0") {
-                        url += `&t=${game_data.player.id}`;
-                    }
-
-                    const html = await jQuery.get(url);
-
-                    const match = html.match(/ScavengeMassScreen[\s\S]*?(,\n *\[.*?\],\n)/);
-                    if (!match) {
-                        break;
-                    }
-
-                    let json = match[1];
-                    json = json.substring(json.indexOf('['));
-                    json = json.slice(0, -2);
-
-                    const data = JSON.parse(json);
-                    if (!data.length) {
-                        break;
-                    }
-
-                    data.forEach(village => {
-                        if (!village.options) return;
-
-                        village.options.forEach(option => {
-                            if (!option.scavenging_squad) return;
-                            if (!option.scavenging_squad.unit_counts) return;
-
-                            Object.entries(option.scavenging_squad.unit_counts).forEach(([unit, value]) => {
-                                if (Object.prototype.hasOwnProperty.call(troops, unit)) {
-                                    troops[unit] += parseInt(value, 10) || 0;
-                                }
-                            });
-                        });
-                    });
-
-                    page++;
-                    await new Promise(resolve => setTimeout(resolve, 200));
-                } catch (e) {
-                    console.error('Erro a ler buscas:', e);
-                    break;
-                }
-            }
-
-            if (!game_data.units.includes('archer')) {
-                delete troops.archer;
-                delete troops.marcher;
-            }
-
-            if (!game_data.units.includes('knight')) {
-                delete troops.knight;
-            }
-
-            return troops;
-        }
-
         function mergeTroops(home, scavenge) {
             const merged = {};
             const keys = new Set([...Object.keys(home), ...Object.keys(scavenge)]);
+
             keys.forEach(k => {
                 merged[k] = (home[k] || 0) + (scavenge[k] || 0);
             });
+
             return merged;
         }
 
@@ -323,6 +387,7 @@ $.getScript(
                 knight: 'Paladinos',
                 snob: 'Nobres'
             };
+
             return labels[key] || '';
         }
     }
