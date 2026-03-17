@@ -1,7 +1,7 @@
 /*
-* Script Name: Troop Counter Saven + Discord
-* Base: NunoF-
-* Edit: botão Discord + envio do total
+* Script Name: Troop Counter Saven + Discord + Modern UI
+* Base: JDi4s
+* Edit: botão Discord + envio do total + UI moderna
 */
 
 if (typeof villagesTroopsCounter !== 'undefined') {
@@ -27,7 +27,7 @@ class VillagesTroopsCounter {
                 loadingWorldConfigMessage: 'Loading world config...',
                 discordSuccess: 'Defense sent to Discord successfully!',
                 discordError: 'There was an error sending the defense to Discord.',
-                credits: 'Village Troops Counter + Discord edit'
+                credits: 'Village Troops Counter + Discord + Modern UI'
             },
             pt_PT: {
                 title: 'Contador de tropas em casa e em buscas',
@@ -46,7 +46,7 @@ class VillagesTroopsCounter {
                 loadingWorldConfigMessage: 'A carregar configurações do mundo...',
                 discordSuccess: 'Defesa enviada para o Discord com sucesso!',
                 discordError: 'Ocorreu um erro ao enviar a defesa para o Discord.',
-                credits: 'Contador de tropas em casa e em buscas + Discord'
+                credits: 'Contador de tropas em casa e em buscas + Discord + UI moderna'
             }
         };
     }
@@ -347,91 +347,19 @@ class VillagesTroopsCounter {
         const totalTroops = this.#buildTotalTroopsObj(this.lastTroopsObj);
 
         const html = `
-<div>
-    <br>
-    <h3 style="position:relative;">${this.UserTranslation.title}</h3>
-    ${getGroupsHtml(this)}
-    <br><br>
-    <table id="support_sum" class="vis overview_table" width="100%">
-        <thead>
-            ${getTroopsHeader(this.availableSupportUnits)}
-        </thead>
-        <tbody>
-            ${this.isScavengingWorld ? getTroopsLine(this.UserTranslation.home, this.lastTroopsObj.villagesTroops) : ''}
-            ${this.isScavengingWorld ? getTroopsLine(this.UserTranslation.scavenging, this.lastTroopsObj.scavengingTroops) : ''}
-            ${getTroopsLine(this.UserTranslation.total, totalTroops)}
-        </tbody>
-    </table>
-
-    <div style="text-align:center; margin-top:15px;">
-        <button id="sendToDiscord" class="btn">
-            ${this.UserTranslation.sendDiscord}
-        </button>
+<div class="tw-modern-wrap">
+    <div class="tw-modern-header">
+        <div>
+            <h2 class="tw-modern-title">${this.UserTranslation.title}</h2>
+            <div class="tw-modern-subtitle">Resumo total de tropas em casa e em buscas</div>
+        </div>
+        <div class="tw-modern-group">
+            <label>Grupo</label>
+            ${getGroupsHtml(this)}
+        </div>
     </div>
-</div>
 
-<style>
-.popup_box_content {
-    min-width: 600px;
-}
-
-.mds .popup_box_content {
-    min-width: unset !important;
-}
-
-#sendToDiscord {
-    margin-top: 10px;
-}
-</style>
-
-<br>
-<span style="font-weight:bold;font-size:10px;">${this.UserTranslation.credits}</span>
-`;
-
-        Dialog.show('import', html, Dialog.close());
-        $('#popup_box_import').css('width', 'unset');
-        UI.SuccessMessage(this.UserTranslation.successMessage, 500);
-
-        $('#sendToDiscord').off('click').on('click', () => {
-            this.#sendToDiscord(totalTroops);
-        });
-
-        function getGroupsHtml(objInstance) {
-            const groups = objInstance.#getGroupsObj();
-            let html = '';
-            $.each(groups, function (groupId, group) {
-                const selected = game_data.group_id === groupId ? 'selected' : '';
-                html += `<option value="${groupId}" ${selected}>${group}</option>`;
-            });
-            return '<select onchange="villagesTroopsCounter.changeGroup(this)">' + html + '</select>';
-        }
-
-        function getTroopsLine(label, troopsObj) {
-            let html = `<tr><td class="center" style="text-wrap: nowrap;">${label}</td>`;
-            $.each(troopsObj, function (key, value) {
-                html += `<td class="center" data-unit="${key}">${value}</td>`;
-            });
-            html += `</tr>`;
-            return html;
-        }
-
-        function getTroopsHeader(availableSupportUnits) {
-            let html = `<tr><th class="center" style="width:0px;"></th>`;
-            $.each(availableSupportUnits, function (_, value) {
-                html += `<th style="text-align:center" width="35"><a href="#" class="unit_link" data-unit="${value}"><img src="https://dspt.innogamescdn.com/asset/2a2f957f/graphic/unit/unit_${value}.png"></a></th>`;
-            });
-            html += `</tr>`;
-            return html;
-        }
-    }
-
-    async changeGroup(obj) {
-        this.#fetchHtmlPage(this.#generateUrl('overview_villages', null, { group: obj.value }));
-        game_data.group_id = obj.value;
-        await this.#createUI();
-    }
-}
-
-var villagesTroopsCounter = new VillagesTroopsCounter();
-villagesTroopsCounter.init();
-}
+    <div class="tw-modern-card">
+        <table id="support_sum" class="tw-modern-table" width="100%">
+            <thead>
+                ${
