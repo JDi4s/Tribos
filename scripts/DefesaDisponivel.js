@@ -1,12 +1,15 @@
 // User Input
 if (typeof DEBUG !== 'boolean') DEBUG = false;
 
+// Webhook do Discord
+var webhookURL = 'COLOCA_AQUI_O_TEU_WEBHOOK_DISCORD';
+
 // Script Config
 var scriptConfig = {
     scriptData: {
         prefix: 'ownHomeTroopsCount',
         name: 'Own Home Troops Count',
-        version: 'v2 + scavenging total',
+        version: 'v3 + scavenging fixed',
         author: 'RedAlert + edit',
         authorUrl: 'https://twscripts.dev/',
         helpLink: 'https://forum.tribalwars.net/index.php?threads/own-home-troops-count.286618/'
@@ -115,14 +118,12 @@ $.getScript(
                 'ra-own-home-troops-count'
             );
 
-            const discordButton = `
+            jQuery('#sendToDiscord').remove();
+            jQuery('.ra-own-home-troops-count').append(`
                 <button id="sendToDiscord" class="btn-twf">
                     Partilhar defesa disponível no ticket
                 </button>
-            `;
-
-            jQuery('#sendToDiscord').remove();
-            jQuery('.ra-own-home-troops-count').append(discordButton);
+            `);
 
             jQuery('#sendToDiscord').on('click', () => {
                 sendDefensiveTroopsToDiscord(totalTroopsCombined);
@@ -141,7 +142,7 @@ $.getScript(
 
         function sendDefensiveTroopsToDiscord(totalTroopsCombined) {
             const playerName = game_data.player.name;
-            const currentGroup = jQuery('strong.group-menu-item').text();
+            const currentGroup = (jQuery('strong.group-menu-item').text() || 'todos').trim();
 
             if (
                 typeof webhookURL !== 'string' ||
@@ -159,7 +160,7 @@ $.getScript(
                         fields: [
                             {
                                 name: '🗂️ **Grupo Atual**',
-                                value: currentGroup || 'Todos',
+                                value: currentGroup || 'todos',
                                 inline: false
                             },
                             {
@@ -205,7 +206,8 @@ $.getScript(
                 success: function () {
                     alert('Defesa compartilhada com a liderança!');
                 },
-                error: function () {
+                error: function (xhr) {
+                    console.error('Erro Discord webhook:', xhr);
                     alert('Houve um erro ao enviar os dados para o Discord.');
                 }
             });
@@ -293,8 +295,8 @@ $.getScript(
 
         function collectTroopsAtHome() {
             const combinedTableRows = jQuery('#combined_table tr.nowrap');
-            let homeTroops = [];
-            let combinedTableHeader = [];
+            const homeTroops = [];
+            const combinedTableHeader = [];
 
             jQuery('#combined_table tr:eq(0) th').each(function () {
                 const thImage = jQuery(this).find('img').attr('src');
@@ -309,12 +311,12 @@ $.getScript(
             });
 
             combinedTableRows.each(function () {
-                let rowTroops = {};
+                const rowTroops = {};
 
                 combinedTableHeader.forEach((tableHeader, index) => {
                     if (tableHeader && tableHeader.includes('unit_')) {
                         const unitType = tableHeader.replace('unit_', '');
-                        const textValue = jQuery(this).find(`td:eq(${index})`).text().trim();
+                        const textValue = jQuery(this).find(`td:eq(${index})`).text().trim().replace(/\./g, '');
                         rowTroops[unitType] = parseInt(textValue || '0', 10) || 0;
                     }
                 });
@@ -326,7 +328,7 @@ $.getScript(
         }
 
         function getTotalHomeTroops(homeTroops) {
-            let totalTroopsAtHome = {
+            const totalTroopsAtHome = {
                 spear: 0,
                 sword: 0,
                 axe: 0,
@@ -399,8 +401,17 @@ $.getScript(
             let currentPage = 0;
 
             while (true) {
-                const url = `/game.php?village=${game_data.village.id}&screen=place&mode=scavenge_mass&page=${currentPage}${game_data.player.sitter !== "0" ? "&t=" + game_data.player.id : ""}`;
-                const html = await fetchPage(url);
+                const url =
+                    `/game.php?village=${game_data.village.id}&screen=place&mode=scavenge_mass&page=${currentPage}` +
+                    `${game_data.player.sitter !== "0" ? "&t=" + game_data.player.id : ""}`;
+
+                let html;
+                try {
+                    html = await fetchPage(url);
+                } catch (e) {
+                    console.error('Erro ao carregar página de buscas:', e);
+                    break;
+                }
 
                 const matches = html.match(/ScavengeMassScreen[\s\S]*?(,\n *\[.*?\}{0,3}\],\n)/);
 
@@ -510,11 +521,13 @@ $.getScript(
         }
 
         function getTroopsBBCode(totalTroops) {
-            const currentGroup = jQuery('strong.group-menu-item').text();
+            let currentGroup = (jQuery('strong.group-menu-item').text() || 'todos').trim();
+            currentGroup = currentGroup.replace(/^>/, '').replace(/<$/, '').trim();
+
             let bbCode = `[b]Contagem de Tropas em Casa + Buscas (${getServerTime()})[/b]\n`;
             bbCode += `[b]Grupo Atual:[/b] ${currentGroup}\n\n`;
 
-            for (let [key, value] of Object.entries(totalTroops)) {
+            for (const [key, value] of Object.entries(totalTroops)) {
                 bbCode += `[unit]${key}[/unit] [b]${twSDK.formatAsNumber(value)}[/b] ${getUnitLabel(key)}\n`;
             }
 
@@ -524,7 +537,7 @@ $.getScript(
         function getServerTime() {
             const serverTime = jQuery('#serverTime').text();
             const serverDate = jQuery('#serverDate').text();
-            return serverDate + ' ' + serverTime;
+            return `${serverDate} ${serverTime}`;
         }
 
         function getUnitLabel(key) {
