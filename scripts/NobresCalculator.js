@@ -1,5 +1,5 @@
 (function () {
-    const SCRIPT_NS = 'nobres_final_modern_v5';
+    const SCRIPT_NS = 'nobres_final_modern_v6';
     const DIALOG_ID = 'nobres_final_modern_dialog';
 
     try { $(document).off('.' + SCRIPT_NS); } catch (e) {}
@@ -93,14 +93,6 @@
             }), { wood: 0, stone: 0, iron: 0 });
         }
 
-        subRes(a, b) {
-            return {
-                wood: Math.max(0, (a.wood || 0) - (b.wood || 0)),
-                stone: Math.max(0, (a.stone || 0) - (b.stone || 0)),
-                iron: Math.max(0, (a.iron || 0) - (b.iron || 0))
-            };
-        }
-
         async loadData() {
             await this.getVillageResources();
             await this.getTransitResources();
@@ -116,7 +108,9 @@
             rows.each((_, row) => {
                 const $row = $(row);
 
-                let wood = 0, stone = 0, iron = 0;
+                let wood = 0;
+                let stone = 0;
+                let iron = 0;
 
                 const resourceCell = $row.find('td').filter(function () {
                     return $(this).find('.wood, .stone, .iron').length > 0;
@@ -147,68 +141,78 @@
             this.resources.villages = total;
         }
 
-        extractResourcesFromCell($cell) {
-            let wood = 0, stone = 0, iron = 0;
+        extractResourcesByIcons($cell) {
+            const res = { wood: 0, stone: 0, iron: 0 };
 
-            wood = this.parseNumber($cell.find('.wood').first().text());
-            stone = this.parseNumber($cell.find('.stone').first().text());
-            iron = this.parseNumber($cell.find('.iron').first().text());
+            $cell.find('span.icon.header').each((_, el) => {
+                const $icon = $(el);
+                const amount = this.parseNumber($icon.parent().text());
 
-            if (!wood && !stone && !iron) {
+                if ($icon.hasClass('wood')) res.wood += amount;
+                if ($icon.hasClass('stone')) res.stone += amount;
+                if ($icon.hasClass('iron')) res.iron += amount;
+            });
+
+            if (!res.wood && !res.stone && !res.iron) {
                 const txt = $cell.text().replace(/\s+/g, ' ').trim();
                 const nums = txt.match(/\d[\d.\s]*/g) || [];
-                if (nums.length >= 3) {
-                    wood = this.parseNumber(nums[0]);
-                    stone = this.parseNumber(nums[1]);
-                    iron = this.parseNumber(nums[2]);
+                if (nums.length === 1) {
+                    const value = this.parseNumber(nums[0]);
+                    const html = $cell.html() || '';
+
+                    if (/header wood|class="wood"|holz/i.test(html)) res.wood = value;
+                    if (/header stone|class="stone"|lehm|argila/i.test(html)) res.stone = value;
+                    if (/header iron|class="iron"|eisen|ferro/i.test(html)) res.iron = value;
+                } else if (nums.length >= 3) {
+                    res.wood = this.parseNumber(nums[0]);
+                    res.stone = this.parseNumber(nums[1]);
+                    res.iron = this.parseNumber(nums[2]);
                 }
             }
 
-            return { wood, stone, iron };
+            return res;
         }
 
-        parseTraderRows(html) {
+        parseOwnTraderTable(html) {
             const dom = $.parseHTML(html);
-            const $dom = $(dom);
+            const $table = $(dom).find('#trades_table');
             const total = { wood: 0, stone: 0, iron: 0 };
 
-            let rows = $dom.find('#trades_table tbody tr');
-            if (!rows.length) {
-                rows = $dom.find('table.vis tbody tr');
-            }
+            $table.find('tbody > tr').each((_, tr) => {
+                const $tr = $(tr);
+                const $tds = $tr.find('td');
+                if ($tds.length < 9) return;
 
-            rows.each((_, row) => {
-                const $row = $(row);
-                const tds = $row.find('td');
-                if (!tds.length) return;
+                const arrowImg = $tds.eq(1).find('img').attr('src') || '';
+                const isOutgoing = /outgoing\.webp/i.test(arrowImg);
+                if (!isOutgoing) return;
 
-                let best = { wood: 0, stone: 0, iron: 0 };
-                let found = false;
+                const $resCell = $tds.last();
+                if ($resCell.hasClass('hidden')) return;
 
-                tds.each((__, td) => {
-                    const $td = $(td);
-                    const hasRes = $td.find('.wood, .stone, .iron').length > 0;
-                    if (!hasRes) return;
+                const res = this.extractResourcesByIcons($resCell);
+                this.addRes(total, res);
+            });
 
-                    const res = this.extractResourcesFromCell($td);
-                    if ((res.wood > 0 || res.stone > 0 || res.iron > 0) && !found) {
-                        best = res;
-                        found = true;
-                    }
-                });
+            return total;
+        }
 
-                if (!found) {
-                    const lastTd = tds.last();
-                    best = this.extractResourcesFromCell(lastTd);
-                }
+        parseIncomingTraderTable(html) {
+            const dom = $.parseHTML(html);
+            const $table = $(dom).find('#trades_table');
+            const total = { wood: 0, stone: 0, iron: 0 };
 
-                const sane =
-                    best.wood >= 0 && best.wood < 100000000 &&
-                    best.stone >= 0 && best.stone < 100000000 &&
-                    best.iron >= 0 && best.iron < 100000000;
+            $table.find('tbody > tr').each((_, tr) => {
+                const $tr = $(tr);
+                const $tds = $tr.find('td');
+                if ($tds.length < 9) return;
 
-                if (sane) {
-                    this.addRes(total, best);
+                const $resCell = $tds.last();
+                if ($resCell.hasClass('hidden')) return;
+
+                const res = this.extractResourcesByIcons($resCell);
+                if (res.wood || res.stone || res.iron) {
+                    this.addRes(total, res);
                 }
             });
 
@@ -219,8 +223,8 @@
             const ownHtml = await this.fetchPage(this.buildUrl('overview_villages', 'trader', { type: 'own' }));
             const incHtml = await this.fetchPage(this.buildUrl('overview_villages', 'trader', { type: 'inc' }));
 
-            this.resources.ownTransit = this.parseTraderRows(ownHtml);
-            this.resources.externalIncoming = this.parseTraderRows(incHtml);
+            this.resources.ownTransit = this.parseOwnTraderTable(ownHtml);
+            this.resources.externalIncoming = this.parseIncomingTraderTable(incHtml);
         }
 
         async getAcademyData() {
@@ -330,7 +334,9 @@
                     current.stone >= cost.stone &&
                     current.iron >= cost.iron
                 ) {
-                    current = this.subRes(current, cost);
+                    current.wood -= cost.wood;
+                    current.stone -= cost.stone;
+                    current.iron -= cost.iron;
                     nobles++;
                     saved = 0;
                 } else {
