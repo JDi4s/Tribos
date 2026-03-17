@@ -4,10 +4,15 @@
 
 var webhookURL = 'COLOCA_AQUI_O_TEU_WEBHOOK_DISCORD';
 
-if (typeof villagesTroopsCounter !== 'undefined') {
-    villagesTroopsCounter.init();
-} else {
-    class VillagesTroopsCounter {
+try {
+    if (typeof villagesTroopsCounter !== 'undefined') {
+        delete window.villagesTroopsCounter;
+    }
+} catch (e) {
+    window.villagesTroopsCounter = undefined;
+}
+
+class VillagesTroopsCounter {
         static VillagesTroopsCounterTranslations() {
             return {
                 en_US: {
