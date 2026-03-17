@@ -42,7 +42,7 @@
                     afterThat: 'Seguinte depois',
                     resourcesLeft: 'Recursos sobrantes',
                     villagesRead: 'Aldeias lidas',
-                    detectionNote: 'Podes ajustar manualmente as moedas poupadas, as moedas já cunhadas e o desconto.',
+                    detectionNote: 'Os valores da academia são lidos automaticamente. Podes ajustá-los manualmente, se quiseres.',
                     credits: 'Calculadora de Nobres by JDi4s',
                     wood: 'Madeira',
                     stone: 'Barro',
@@ -86,7 +86,7 @@
                     afterThat: 'After that',
                     resourcesLeft: 'Resources left',
                     villagesRead: 'Villages read',
-                    detectionNote: 'You can manually adjust saved coins, minted coins and discount.',
+                    detectionNote: 'Academy values are auto-detected. You can still adjust them manually.',
                     credits: 'Noble Calculator by JDi4s',
                     wood: 'Wood',
                     stone: 'Clay',
@@ -109,7 +109,6 @@
             this.settingsKey = `nobresCalculatorSettings_${game_data.world}_${game_data.player.id}`;
 
             this.detectedData = null;
-
             this.villageResources = {};
             this.incomingResByVillage = {};
             this.totalResources = { wood: 0, stone: 0, iron: 0 };
@@ -157,7 +156,7 @@
                     : new XMLSerializer().serializeToString(xml);
 
             localStorage.setItem(this.worldConfigFileName, xmlString);
-            await this.#waitMilliseconds(Date.now(), 200);
+            await this.#waitMilliseconds(Date.now(), 100);
             return xmlString;
         }
 
@@ -214,7 +213,7 @@
         }
 
         async #setMaxLinesPerPage(screen, mode, value, extraParams = {}) {
-            await new Promise(res => setTimeout(res, 200));
+            await new Promise(res => setTimeout(res, 120));
 
             const form = document.createElement("form");
             form.method = "POST";
@@ -309,125 +308,82 @@
 
         async #getVillageResources() {
             const resourcesByVillage = {};
-            let currentPage = 0;
-            let guard = 0;
 
             await this.#setMaxLinesPerPage('overview_villages', 'prod', 1000);
-            await this.#waitMilliseconds(Date.now(), 250);
+            await this.#waitMilliseconds(Date.now(), 120);
 
-            while (guard < 200) {
-                guard++;
+            const rawPage = this.#fetchHtmlPage(
+                this.#generateUrl('overview_villages', 'prod', { page: 0 })
+            );
+            if (!rawPage) return resourcesByVillage;
 
-                const rawPage = this.#fetchHtmlPage(
-                    this.#generateUrl('overview_villages', 'prod', { page: currentPage })
-                );
-                if (!rawPage) break;
+            const pageHtml = $.parseHTML(rawPage);
+            const table = $(pageHtml).find('#production_table');
+            if (!table.length) return resourcesByVillage;
 
-                const pageHtml = $.parseHTML(rawPage);
-                const table = $(pageHtml).find('#production_table');
+            const rows = table.find('tbody tr');
 
-                if (!table.length) break;
+            rows.each((_, row) => {
+                const villageId = $(row).find('.quickedit-vn').attr('data-id');
+                if (!villageId) return;
 
-                const rows = table.find('tbody tr');
-                if (!rows.length) break;
+                const resourcesCell = $(row).find('td').eq(3);
+                if (!resourcesCell.length) return;
 
-                let foundRows = 0;
-
-                rows.each((_, row) => {
-                    const villageId = $(row).find('.quickedit-vn').attr('data-id');
-                    if (!villageId) return;
-
-                    const resourcesCell = $(row).find('td').eq(3);
-                    if (!resourcesCell.length) return;
-
-                    const wood = this.#parseNumber(resourcesCell.find('.res.wood').text());
-                    const stone = this.#parseNumber(resourcesCell.find('.res.stone').text());
-                    const iron = this.#parseNumber(resourcesCell.find('.res.iron').text());
-
-                    resourcesByVillage[String(villageId)] = {
-                        wood,
-                        stone,
-                        iron
-                    };
-
-                    foundRows++;
-                });
-
-                if (!foundRows) break;
-
-                currentPage++;
-                await this.#waitMilliseconds(Date.now(), 200);
-            }
+                resourcesByVillage[String(villageId)] = {
+                    wood: this.#parseNumber(resourcesCell.find('.res.wood').text()),
+                    stone: this.#parseNumber(resourcesCell.find('.res.stone').text()),
+                    iron: this.#parseNumber(resourcesCell.find('.res.iron').text())
+                };
+            });
 
             return resourcesByVillage;
         }
 
         async #getIncomingResourcesByVillage() {
             const incomingByVillage = {};
-            let currentPage = 0;
-            let guard = 0;
 
             await this.#setMaxLinesPerPage('overview_villages', 'trader', 1000, { type: 'inc' });
-            await this.#waitMilliseconds(Date.now(), 250);
+            await this.#waitMilliseconds(Date.now(), 120);
 
-            while (guard < 200) {
-                guard++;
+            const rawPage = this.#fetchHtmlPage(
+                this.#generateUrl('overview_villages', 'trader', { type: 'inc', page: 0 })
+            );
+            if (!rawPage) return incomingByVillage;
 
-                const rawPage = this.#fetchHtmlPage(
-                    this.#generateUrl('overview_villages', 'trader', { type: 'inc', page: currentPage })
-                );
-                if (!rawPage) break;
+            const pageHtml = $.parseHTML(rawPage);
+            const table = $(pageHtml).find('#trades_table');
+            if (!table.length) return incomingByVillage;
 
-                const pageHtml = $.parseHTML(rawPage);
-                const table = $(pageHtml).find('#trades_table');
+            const rows = table.find('tbody tr');
 
-                if (!table.length) break;
+            rows.each((_, row) => {
+                const cells = $(row).find('td');
+                if (!cells.length) return;
 
-                const rows = table.find('tbody tr');
-                if (!rows.length) break;
+                const targetVillageLink = cells.eq(3).find('a[href*="village="]').attr('href');
+                let targetVillageId = null;
 
-                let foundRows = 0;
+                if (targetVillageLink) {
+                    const m = targetVillageLink.match(/village=(\d+)/);
+                    if (m && m[1]) targetVillageId = m[1];
+                }
 
-                rows.each((_, row) => {
-                    const cells = $(row).find('td');
-                    if (!cells.length) return;
+                if (!targetVillageId) return;
 
-                    const targetVillageLink = cells.eq(3).find('a[href*="village="]').attr('href');
-                    let targetVillageId = null;
+                const resourcesCell = cells.eq(cells.length - 1);
+                const wood = this.#parseNumber(resourcesCell.find('.res.wood, .wood').text());
+                const stone = this.#parseNumber(resourcesCell.find('.res.stone, .stone').text());
+                const iron = this.#parseNumber(resourcesCell.find('.res.iron, .iron').text());
 
-                    if (targetVillageLink) {
-                        const m = targetVillageLink.match(/village=(\d+)/);
-                        if (m && m[1]) targetVillageId = m[1];
-                    }
+                if (!incomingByVillage[targetVillageId]) {
+                    incomingByVillage[targetVillageId] = { wood: 0, stone: 0, iron: 0 };
+                }
 
-                    if (!targetVillageId) {
-                        const fallbackId = cells.eq(3).find('.quickedit-vn').attr('data-id');
-                        if (fallbackId) targetVillageId = fallbackId;
-                    }
-
-                    if (!targetVillageId) return;
-
-                    const resourcesCell = cells.eq(cells.length - 1);
-                    const wood = this.#parseNumber(resourcesCell.find('.res.wood, .wood').text());
-                    const stone = this.#parseNumber(resourcesCell.find('.res.stone, .stone').text());
-                    const iron = this.#parseNumber(resourcesCell.find('.res.iron, .iron').text());
-
-                    if (!incomingByVillage[targetVillageId]) {
-                        incomingByVillage[targetVillageId] = { wood: 0, stone: 0, iron: 0 };
-                    }
-
-                    incomingByVillage[targetVillageId].wood += wood;
-                    incomingByVillage[targetVillageId].stone += stone;
-                    incomingByVillage[targetVillageId].iron += iron;
-
-                    foundRows++;
-                });
-
-                if (!foundRows) break;
-
-                currentPage++;
-                await this.#waitMilliseconds(Date.now(), 200);
-            }
+                incomingByVillage[targetVillageId].wood += wood;
+                incomingByVillage[targetVillageId].stone += stone;
+                incomingByVillage[targetVillageId].iron += iron;
+            });
 
             return incomingByVillage;
         }
@@ -452,8 +408,8 @@
             const saved = this.#loadSettings();
 
             let totalMintedCoins = 0;
-            let savedForNextNoble = 1;
-            let missingForNextNoble = 1;
+            let savedForNextNoble = 0;
+            let missingForNextNoble = 0;
 
             const totalMatch = htmlText.match(/Moedas de ouro\s+Total:\s*(\d+)/i);
             if (totalMatch && totalMatch[1]) {
@@ -473,11 +429,11 @@
             return {
                 coinCost: baseCoinCost,
                 snobCost: baseSnobCost,
-                nextNobleCoins: typeof saved.nextNobleCoins === 'number' ? saved.nextNobleCoins : savedForNextNoble,
-                existingCoins: typeof saved.existingCoins === 'number' ? saved.existingCoins : totalMintedCoins,
+                nextNobleCoins: saved.nextNobleCoins ?? savedForNextNoble,
+                existingCoins: saved.existingCoins ?? totalMintedCoins,
                 missingCoinsForNextNoble: missingForNextNoble,
-                discount: typeof saved.discount === 'number' ? saved.discount : 0,
-                includeIncoming: typeof saved.includeIncoming === 'boolean' ? saved.includeIncoming : true
+                discount: saved.discount ?? 0,
+                includeIncoming: saved.includeIncoming ?? true
             };
         }
 
@@ -512,51 +468,21 @@
             );
         }
 
-        #calculatePlan(totalResources, coinCost, snobCost, savedCoinsForNextNoble, discountPercent, totalMintedCoins = 0) {
+        #calculatePlan(totalResources, coinCost, snobCost, savedCoinsForNextNoble, discountPercent) {
             const discountedCoinCost = this.#getDiscountedCoinCost(coinCost, discountPercent);
 
-            let resources = {
+            const resources = {
                 wood: totalResources.wood,
                 stone: totalResources.stone,
                 iron: totalResources.iron
             };
 
-            let nobles = 0;
-            let savedCoins = Number(savedCoinsForNextNoble || 0);
-            let mintedCoins = Number(totalMintedCoins || 0);
-
-            while (true) {
-                const missingCoins = Math.max(0, 31 - mintedCoins); // segurança mínima, mas não usada como custo principal
-
-                const nextCoinRequirement = Math.max(0, 25 - savedCoins);
-
-                const cost = {
-                    wood: snobCost.wood + discountedCoinCost.wood * nextCoinRequirement,
-                    stone: snobCost.stone + discountedCoinCost.stone * nextCoinRequirement,
-                    iron: snobCost.iron + discountedCoinCost.iron * nextCoinRequirement
-                };
-
-                if (!this.#canAfford(resources, cost)) break;
-
-                resources.wood -= cost.wood;
-                resources.stone -= cost.stone;
-                resources.iron -= cost.iron;
-
-                nobles++;
-                mintedCoins += nextCoinRequirement;
-                savedCoins = 0;
-
-                // depois de criar um nobre, o próximo volta a precisar de mais moedas
-                // como não temos fórmula universal por mundo no HTML atual, mantemos o passo seguinte linear simples
-                savedCoins = 0;
-            }
-
-            const nextCoinRequirement = Math.max(0, 25 - savedCoins);
+            const missingCoins = Math.max(0, 25 - Number(savedCoinsForNextNoble || 0));
 
             const nextCost = {
-                wood: snobCost.wood + discountedCoinCost.wood * nextCoinRequirement,
-                stone: snobCost.stone + discountedCoinCost.stone * nextCoinRequirement,
-                iron: snobCost.iron + discountedCoinCost.iron * nextCoinRequirement
+                wood: snobCost.wood + discountedCoinCost.wood * missingCoins,
+                stone: snobCost.stone + discountedCoinCost.stone * missingCoins,
+                iron: snobCost.iron + discountedCoinCost.iron * missingCoins
             };
 
             const afterThatCost = {
@@ -565,9 +491,18 @@
                 iron: snobCost.iron + discountedCoinCost.iron * 25
             };
 
+            let affordableNobles = 0;
+
+            if (this.#canAfford(resources, nextCost)) {
+                affordableNobles = 1;
+                resources.wood -= nextCost.wood;
+                resources.stone -= nextCost.stone;
+                resources.iron -= nextCost.iron;
+            }
+
             return {
-                affordableNobles: nobles,
-                nextCoinsNeeded: savedCoins,
+                affordableNobles,
+                nextCoinsNeeded: savedCoinsForNextNoble,
                 discountedCoinCost,
                 nextCost,
                 afterThatCost,
@@ -610,8 +545,7 @@
                 detected.coinCost,
                 detected.snobCost,
                 detected.nextNobleCoins,
-                detected.discount,
-                detected.existingCoins || 0
+                detected.discount
             );
 
             const t = this.t;
@@ -835,8 +769,10 @@
 </style>
 `;
 
-            Dialog.show(DIALOG_ID, html, Dialog.close());
-            $('#popup_box_' + DIALOG_ID).css('width', 'unset');
+            Dialog.show(DIALOG_ID, html);
+            setTimeout(function () {
+                $('#popup_box_' + DIALOG_ID).css('width', 'unset');
+            }, 0);
 
             const applyFormValues = async () => {
                 const nextNobleCoins = parseInt($('#nc-next-noble').val(), 10) || 0;
@@ -892,7 +828,7 @@
             $(document).off('click.' + SCRIPT_NS, '#nc-copy-summary');
             $(document).on('click.' + SCRIPT_NS, '#nc-copy-summary', async () => {
                 const nextNobleCoins = parseInt($('#nc-next-noble').val(), 10) || 0;
-                const discount = parseFloat($('#nc-discount').val()) || 0;
+                const discount = parseFloat($('#nc-discount').val(), 10) || 0;
                 const existingCoins = parseInt($('#nc-existing-coins').val(), 10) || 0;
                 const includeIncoming = $('#nc-include-incoming').is(':checked');
 
@@ -903,8 +839,7 @@
                     this.detectedData.coinCost,
                     this.detectedData.snobCost,
                     nextNobleCoins,
-                    discount,
-                    existingCoins
+                    discount
                 );
 
                 const summary = this.#buildSummaryText(currentPlan, {
