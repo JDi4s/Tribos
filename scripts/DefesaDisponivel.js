@@ -1,5 +1,5 @@
-javascript:(() => {
-    const webhookURL = 'COLOCA_AQUI_O_TEU_WEBHOOK_DISCORD';
+(function () {
+    const webhookURL = window.webhookURL || 'COLOCA_AQUI_O_TEU_WEBHOOK_DISCORD';
     const SCRIPT_NS = 'vtc_modern';
     const DIALOG_ID = 'vtc_modern_dialog';
 
@@ -20,6 +20,8 @@ javascript:(() => {
                     refresh: 'Refresh',
                     sendDiscord: 'Send to Discord',
                     noGroup: 'All',
+                    player: 'Player',
+                    server: 'Server',
                     errorMessages: {
                         premiumRequired: 'Error. A premium account is required to run this script!',
                         errorFetching: 'An error occurred while trying to fetch the following URL:',
@@ -43,6 +45,8 @@ javascript:(() => {
                     refresh: 'Atualizar',
                     sendDiscord: 'Enviar para Discord',
                     noGroup: 'Todos',
+                    player: 'Jogador',
+                    server: 'Servidor',
                     errorMessages: {
                         premiumRequired: 'Erro. É necessário possuir conta premium para correr este script!',
                         errorFetching: 'Ocorreu um erro ao tentar carregar o seguinte URL:',
@@ -590,8 +594,8 @@ javascript:(() => {
                         <div class="vtc-toolbar">
                             <div class="vtc-meta">
                                 <div class="vtc-badge"><strong>${this.t.group}:</strong> ${currentGroupName}</div>
-                                <div class="vtc-badge"><strong>Player:</strong> ${game_data.player.name}</div>
-                                <div class="vtc-badge"><strong>Server:</strong> ${this.#getServerTime()}</div>
+                                <div class="vtc-badge"><strong>${this.t.player}:</strong> ${game_data.player.name}</div>
+                                <div class="vtc-badge"><strong>${this.t.server}:</strong> ${this.#getServerTime()}</div>
                             </div>
 
                             <div class="vtc-controls">
