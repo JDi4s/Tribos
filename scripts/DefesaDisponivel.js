@@ -1,5 +1,5 @@
 /* Script Name: Troop Counter Saven + Discord */
-/* Base: NunoF- */
+/* Base: JDi4s */
 /* Edit: botão Discord + envio do total */
 
 var webhookURL = 'COLOCA_AQUI_O_TEU_WEBHOOK_DISCORD';
@@ -30,7 +30,7 @@ if (typeof villagesTroopsCounter !== 'undefined') {
                     credits: 'Village Troops Counter + Discord edit'
                 },
                 pt_PT: {
-                    title: 'Contador de tropas em casa e em buscas',
+                    title: 'Contador de tropas',
                     home: 'Em casa',
                     scavenging: 'Em busca',
                     total: 'Total',
@@ -46,7 +46,7 @@ if (typeof villagesTroopsCounter !== 'undefined') {
                     loadingWorldConfigMessage: 'A carregar configurações do mundo...',
                     discordSuccess: 'Defesa enviada para o Discord com sucesso!',
                     discordError: 'Ocorreu um erro ao enviar a defesa para o Discord.',
-                    credits: 'Contador de tropas em casa e em buscas + Discord'
+                    credits: 'Contador de tropas by JDi4s'
                 }
             };
         }
