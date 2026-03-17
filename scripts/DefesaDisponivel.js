@@ -12,7 +12,7 @@
             return {
                 en_US: {
                     title: 'Home and Scavenging Troops Counter',
-                    subtitle: 'Defense summary and offensive village status',
+                    subtitle: 'Defense summary',
                     home: 'Home',
                     scavenging: 'Scavenging',
                     total: 'Total',
@@ -22,9 +22,6 @@
                     server: 'Server',
                     refresh: 'Refresh',
                     sendDiscord: 'Send to Discord',
-                    full: 'Fulls',
-                    semi: 'Semis',
-                    rebuilding: 'Rebuilding',
                     noGroup: 'All',
                     copy: 'Copy',
                     bbCopied: 'BBCode copied!',
@@ -47,7 +44,7 @@
                 },
                 pt_PT: {
                     title: 'Contador de tropas em casa e em buscas',
-                    subtitle: 'Resumo defensivo e estado ofensivo das aldeias',
+                    subtitle: 'Resumo defensivo',
                     home: 'Em casa',
                     scavenging: 'Em busca',
                     total: 'Total',
@@ -57,9 +54,6 @@
                     server: 'Servidor',
                     refresh: 'Atualizar',
                     sendDiscord: 'Enviar para Discord',
-                    full: 'Fulls',
-                    semi: 'Semis',
-                    rebuilding: 'A recrutar',
                     noGroup: 'Todos',
                     copy: 'Copiar',
                     bbCopied: 'BBCode copiado!',
@@ -384,107 +378,6 @@
             };
         }
 
-        #calculateTotalPop(v) {
-            const popValues = {
-                spear: 1,
-                sword: 1,
-                axe: 1,
-                archer: 1,
-                spy: 2,
-                light: 4,
-                marcher: 5,
-                heavy: 6,
-                ram: 5,
-                catapult: 8,
-                knight: 10,
-                snob: 100
-            };
-
-            let total = 0;
-
-            for (let unit in v) {
-                if (popValues[unit]) {
-                    total += (v[unit] || 0) * popValues[unit];
-                }
-            }
-
-            return total;
-        }
-
-        #calculateNukeStatusByVillageArray(villagesArray) {
-            const status = { full: 0, semi: 0, rebuilding: 0 };
-
-            villagesArray.forEach(v => {
-                const pop = this.#calculateTotalPop(v);
-                const axes = v.axe || 0;
-
-                if (pop > 20000 && axes > 500) {
-                    status.full++;
-                } else if (pop > 16000 && pop < 20000 && axes > 500) {
-                    status.semi++;
-                } else if (pop > 12500 && pop < 16000 && axes > 500) {
-                    status.rebuilding++;
-                }
-            });
-
-            return status;
-        }
-
-        async #getVillageRowsForNukes() {
-            const villages = [];
-            let currentPage = 0;
-            let lastRunTime = Date.now();
-
-            await this.#setMaxLinesPerPage('overview_villages', 'units', 1000);
-            await this.#waitMilliseconds(lastRunTime, 200);
-
-            let lastVillageId = null;
-
-            do {
-                lastRunTime = Date.now();
-
-                const rawPage = this.#fetchHtmlPage(
-                    this.#generateUrl('overview_villages', 'units', { page: currentPage })
-                );
-                if (!rawPage) break;
-
-                const overviewTroopsPage = $.parseHTML(rawPage);
-                const troopsTable = $(overviewTroopsPage).find('#units_table tbody');
-                if (!troopsTable.length) break;
-
-                const lastVillageIdTemp = $(troopsTable).find('span').eq(0).attr('data-id');
-                if (!lastVillageIdTemp) break;
-
-                if (lastVillageId !== null && lastVillageId === lastVillageIdTemp) break;
-                lastVillageId = lastVillageIdTemp;
-
-                const currentObj = this;
-                $.each(troopsTable, function (_, tbodyObj) {
-                    const villageTroops = $(tbodyObj).find('tr').eq(0);
-                    const villageTroopsLine = $(villageTroops).find('td:gt(1)');
-                    let c = 0;
-                    const villageData = {};
-
-                    $.each(currentObj.availableUnits, function (_, value) {
-                        villageData[value] = parseInt(villageTroopsLine.eq(c).text().trim(), 10) || 0;
-                        c++;
-                    });
-
-                    villages.push(villageData);
-                });
-
-                currentPage++;
-                await this.#waitMilliseconds(lastRunTime, 200);
-            } while (true);
-
-            return villages;
-        }
-
-        async #getNukeStatus() {
-            const villagesArray = await this.#getVillageRowsForNukes();
-            return this.#calculateNukeStatusByVillageArray(villagesArray);
-        }
-
         #getCurrentGroupName() {
             const groups = this.#getGroupsObj();
             return (game_data.group_id && groups[game_data.group_id]) || this.UserTranslation.noGroup;
@@ -586,7 +479,6 @@
             const totalTroops = this.#buildTotalTroopsObj(troopsObj);
             const discordDefensiveTroops = this.#buildDiscordDefensiveTroops(totalTroops);
             const visibleDefensiveTroops = this.#buildVisibleDefensiveTroops(totalTroops);
-            const nukeStatus = await this.#getNukeStatus();
             const bbCode = this.#getTroopsBBCode(totalTroops);
             const groups = this.#getGroupsObj();
             const currentGroupName = this.#getCurrentGroupName();
@@ -689,25 +581,7 @@
             </div>
         </div>
 
-        <div class="dd-cards">
-            <div class="dd-card dd-stat dd-full">
-                <div class="dd-stat-icon">🚀</div>
-                <div class="dd-stat-value">${nukeStatus.full}</div>
-                <div class="dd-stat-label">${t.full}</div>
-            </div>
-            <div class="dd-card dd-stat dd-semi">
-                <div class="dd-stat-icon">📈</div>
-                <div class="dd-stat-value">${nukeStatus.semi}</div>
-                <div class="dd-stat-label">${t.semi}</div>
-            </div>
-            <div class="dd-card dd-stat dd-rec">
-                <div class="dd-stat-icon">🛠️</div>
-                <div class="dd-stat-value">${nukeStatus.rebuilding}</div>
-                <div class="dd-stat-label">${t.rebuilding}</div>
-            </div>
-        </div>
-
-        <div class="dd-grid">
+        <div class="dd-grid" style="padding-top:18px;">
             <div class="dd-panel dd-panel-large">
                 <div class="dd-panel-head">
                     <h4>${t.summaryTotal}</h4>
@@ -897,53 +771,6 @@
     border-color: #c89b53;
 }
 
-#dd-root .dd-cards {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 14px;
-    padding: 18px 22px 0;
-}
-
-#dd-root .dd-card {
-    border-radius: 16px;
-    padding: 16px;
-    border: 1px solid rgba(255,255,255,.08);
-    box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
-}
-
-#dd-root .dd-stat {
-    text-align: center;
-}
-
-#dd-root .dd-full {
-    background: linear-gradient(180deg, #7d1f1f 0%, #5f1717 100%);
-}
-
-#dd-root .dd-semi {
-    background: linear-gradient(180deg, #a94e39 0%, #82402e 100%);
-}
-
-#dd-root .dd-rec {
-    background: linear-gradient(180deg, #5c5c5c 0%, #444 100%);
-}
-
-#dd-root .dd-stat-icon {
-    font-size: 20px;
-    margin-bottom: 6px;
-}
-
-#dd-root .dd-stat-value {
-    font-size: 28px;
-    font-weight: 800;
-    color: #fff;
-}
-
-#dd-root .dd-stat-label {
-    margin-top: 4px;
-    font-size: 12px;
-    color: rgba(255,255,255,.9);
-}
-
 #dd-root .dd-grid {
     display: grid;
     grid-template-columns: 1.4fr .9fr;
@@ -1058,7 +885,6 @@
         min-width: unset;
     }
 
-    #dd-root .dd-cards,
     #dd-root .dd-grid {
         grid-template-columns: 1fr;
     }
