@@ -9,7 +9,7 @@ var scriptConfig = {
     scriptData: {
         prefix: 'ownHomeTroopsCount',
         name: 'Own Home Troops Count (Home + Scavenging)',
-        version: 'v6 clean',
+        version: 'v7 ajax scavenging fix',
         author: 'RedAlert + edit',
         authorUrl: 'https://twscripts.dev/',
         helpLink: 'https://forum.tribalwars.net/index.php?threads/own-home-troops-count.286618/'
@@ -66,7 +66,7 @@ $.getScript(
             const homeTroops = collectTroopsAtHome();
             const totalHome = getTotalHomeTroops(homeTroops);
 
-            const scavengingTroops = getScavengingTroops();
+            const scavengingTroops = await getScavengingTroops();
             const totalCombined = mergeTroops(totalHome, scavengingTroops);
 
             const bbCode = getTroopsBBCode(totalCombined);
@@ -192,13 +192,13 @@ $.getScript(
 
         function getTotalHomeTroops(homeTroops) {
             const totals = {
-                spear:0,sword:0,axe:0,archer:0,spy:0,light:0,
-                marcher:0,heavy:0,ram:0,catapult:0,knight:0,snob:0
+                spear: 0, sword: 0, axe: 0, archer: 0, spy: 0, light: 0,
+                marcher: 0, heavy: 0, ram: 0, catapult: 0, knight: 0, snob: 0
             };
 
-            homeTroops.forEach(obj=>{
-                Object.keys(totals).forEach(unit=>{
-                    totals[unit]+=obj[unit]||0;
+            homeTroops.forEach(obj => {
+                Object.keys(totals).forEach(unit => {
+                    totals[unit] += obj[unit] || 0;
                 });
             });
 
@@ -214,86 +214,116 @@ $.getScript(
             return totals;
         }
 
-        function getScavengingTroops() {
+        async function getScavengingTroops() {
             const troops = {
-                spear:0,sword:0,axe:0,archer:0,spy:0,
-                light:0,marcher:0,heavy:0,ram:0,
-                catapult:0,knight:0,snob:0
+                spear: 0, sword: 0, axe: 0, archer: 0, spy: 0,
+                light: 0, marcher: 0, heavy: 0, ram: 0,
+                catapult: 0, knight: 0, snob: 0
             };
 
-            if (typeof ScavengeMassScreen === "undefined") {
-                return troops;
-            }
+            let page = 0;
 
-            try {
-                const villages = ScavengeMassScreen.villages;
+            while (true) {
+                try {
+                    let url = `/game.php?village=${game_data.village.id}&screen=place&mode=scavenge_mass&page=${page}`;
+                    if (game_data.player.sitter !== "0") {
+                        url += `&t=${game_data.player.id}`;
+                    }
 
-                Object.values(villages).forEach(village=>{
-                    if (!village.options) return;
+                    const html = await jQuery.get(url);
 
-                    Object.values(village.options).forEach(option=>{
-                        if (!option.scavenging_squad) return;
+                    const match = html.match(/ScavengeMassScreen[\s\S]*?(,\n *\[.*?\],\n)/);
+                    if (!match) {
+                        break;
+                    }
 
-                        const units = option.scavenging_squad.unit_counts;
+                    let json = match[1];
+                    json = json.substring(json.indexOf('['));
+                    json = json.slice(0, -2);
 
-                        Object.entries(units).forEach(([unit,value])=>{
-                            if (troops.hasOwnProperty(unit)) {
-                                troops[unit]+=value;
-                            }
+                    const data = JSON.parse(json);
+                    if (!data.length) {
+                        break;
+                    }
+
+                    data.forEach(village => {
+                        if (!village.options) return;
+
+                        village.options.forEach(option => {
+                            if (!option.scavenging_squad) return;
+                            if (!option.scavenging_squad.unit_counts) return;
+
+                            Object.entries(option.scavenging_squad.unit_counts).forEach(([unit, value]) => {
+                                if (Object.prototype.hasOwnProperty.call(troops, unit)) {
+                                    troops[unit] += parseInt(value, 10) || 0;
+                                }
+                            });
                         });
                     });
-                });
 
-            } catch(e){
-                console.error("Erro a ler buscas:",e);
+                    page++;
+                    await new Promise(resolve => setTimeout(resolve, 200));
+                } catch (e) {
+                    console.error('Erro a ler buscas:', e);
+                    break;
+                }
+            }
+
+            if (!game_data.units.includes('archer')) {
+                delete troops.archer;
+                delete troops.marcher;
+            }
+
+            if (!game_data.units.includes('knight')) {
+                delete troops.knight;
             }
 
             return troops;
         }
 
-        function mergeTroops(home,scavenge){
-            const merged={};
-            const keys=new Set([...Object.keys(home),...Object.keys(scavenge)]);
-            keys.forEach(k=>{
-                merged[k]=(home[k]||0)+(scavenge[k]||0);
+        function mergeTroops(home, scavenge) {
+            const merged = {};
+            const keys = new Set([...Object.keys(home), ...Object.keys(scavenge)]);
+            keys.forEach(k => {
+                merged[k] = (home[k] || 0) + (scavenge[k] || 0);
             });
             return merged;
         }
 
         function getTroopsBBCode(totalTroops) {
             let currentGroup = (jQuery('strong.group-menu-item').text() || 'todos').trim();
-            currentGroup = currentGroup.replace(/^>/,'').replace(/<$/,'').trim();
+            currentGroup = currentGroup.replace(/^>/, '').replace(/<$/, '').trim();
 
-            let bbCode=`[b]Contagem de Tropas em Casa + Buscas (${getServerTime()})[/b]\n`;
-            bbCode+=`[b]Grupo Atual:[/b] ${currentGroup}\n\n`;
+            let bbCode = `[b]Contagem de Tropas em Casa + Buscas (${getServerTime()})[/b]\n`;
+            bbCode += `[b]Grupo Atual:[/b] ${currentGroup}\n\n`;
 
-            Object.entries(totalTroops).forEach(([unit,value])=>{
-                bbCode+=`[unit]${unit}[/unit] [b]${twSDK.formatAsNumber(value)}[/b] ${getUnitLabel(unit)}\n`;
+            Object.entries(totalTroops).forEach(([unit, value]) => {
+                bbCode += `[unit]${unit}[/unit] [b]${twSDK.formatAsNumber(value)}[/b] ${getUnitLabel(unit)}\n`;
             });
 
             return bbCode;
         }
 
         function getServerTime() {
-            return jQuery('#serverDate').text()+' '+jQuery('#serverTime').text();
+            return jQuery('#serverDate').text() + ' ' + jQuery('#serverTime').text();
         }
 
         function getUnitLabel(key) {
-            const labels={
-                spear:'Lanceiros',
-                sword:'Espadachins',
-                axe:'Vikings',
-                archer:'Arqueiros',
-                spy:'Batedores',
-                light:'Cavalaria Leve',
-                marcher:'Arqueiros Montados',
-                heavy:'Cavalaria Pesada',
-                ram:'Aríetes',
-                catapult:'Catapultas',
-                knight:'Paladinos',
-                snob:'Nobres'
+            const labels = {
+                spear: 'Lanceiros',
+                sword: 'Espadachins',
+                axe: 'Vikings',
+                archer: 'Arqueiros',
+                spy: 'Batedores',
+                light: 'Cavalaria Leve',
+                marcher: 'Arqueiros Montados',
+                heavy: 'Cavalaria Pesada',
+                ram: 'Aríetes',
+                catapult: 'Catapultas',
+                knight: 'Paladinos',
+                snob: 'Nobres'
             };
-            return labels[key]||'';
+            return labels[key] || '';
         }
     }
 );
