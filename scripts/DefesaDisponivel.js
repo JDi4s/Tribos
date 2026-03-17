@@ -4,14 +4,11 @@ if (typeof DEBUG !== 'boolean') DEBUG = false;
 // Webhook do Discord
 var webhookURL = 'COLOCA_AQUI_O_TEU_WEBHOOK_DISCORD';
 
-// DEBUG visual para confirmar que este script está mesmo a carregar
-alert('SCRIPT NOVO CARREGADO');
-
 var scriptConfig = {
     scriptData: {
         prefix: 'ownHomeTroopsCount',
         name: 'Own Home Troops Count',
-        version: 'v4 + scavenging debug',
+        version: 'v5 + scavenging final',
         author: 'RedAlert + edit',
         authorUrl: 'https://twscripts.dev/',
         helpLink: 'https://forum.tribalwars.net/index.php?threads/own-home-troops-count.286618/'
@@ -42,6 +39,8 @@ $.getScript(
     `https://twscripts.dev/scripts/twSDK.js?url=${document.currentScript.src}`,
     async function () {
         await twSDK.init(scriptConfig);
+
+        console.log('[Troops Script] SCRIPT NOVO CARREGADO');
 
         $('<style>').prop('type', 'text/css').html(`
             #sendToDiscord.btn-twf {
@@ -92,12 +91,11 @@ $.getScript(
             } catch (error) {
                 UI.ErrorMessage('Ocorreu um erro inesperado!');
                 console.error(`${scriptInfo} Error:`, error);
-                alert('Erro ao correr o script. Abre a consola com F12.');
             }
         })();
 
         async function buildUI() {
-            alert('buildUI correu');
+            console.log('[Troops Script] buildUI correu');
 
             const homeTroops = collectTroopsAtHome();
             const totalTroopsAtHome = getTotalHomeTroops(homeTroops);
@@ -109,15 +107,9 @@ $.getScript(
             window.scavengingTroopsDebug = scavengingTroops;
             window.totalTroopsCombinedDebug = totalTroopsCombined;
 
-            console.log('CASA:', totalTroopsAtHome);
-            console.log('BUSCAS:', scavengingTroops);
-            console.log('TOTAL:', totalTroopsCombined);
-
-            alert(
-                'CASA: ' + JSON.stringify(totalTroopsAtHome) + '\n' +
-                'BUSCAS: ' + JSON.stringify(scavengingTroops) + '\n' +
-                'TOTAL: ' + JSON.stringify(totalTroopsCombined)
-            );
+            console.log('[Troops Script] CASA:', totalTroopsAtHome);
+            console.log('[Troops Script] BUSCAS:', scavengingTroops);
+            console.log('[Troops Script] TOTAL:', totalTroopsCombined);
 
             const bbCode = getTroopsBBCode(totalTroopsCombined);
             const content = prepareContent(totalTroopsCombined, bbCode);
@@ -169,41 +161,13 @@ $.getScript(
                     {
                         title: '**🛡️ TROPA DEFENSIVA**',
                         fields: [
-                            {
-                                name: '🗂️ **Grupo Atual**',
-                                value: currentGroup || 'todos',
-                                inline: false
-                            },
-                            {
-                                name: '<:lanceiro:1368839513891409972> **Lanceiros**',
-                                value: `${totalTroopsCombined.spear || 0}`,
-                                inline: true
-                            },
-                            {
-                                name: '<:espadachim:1368839514746785844> **Espadachins**',
-                                value: `${totalTroopsCombined.sword || 0}`,
-                                inline: true
-                            },
-                            {
-                                name: '<:batedor:1368839512423137404> **Batedores**',
-                                value: `${totalTroopsCombined.spy || 0}`,
-                                inline: true
-                            },
-                            {
-                                name: '<:pesada:1368839517997498398> **Cavalaria Pesada**',
-                                value: `${totalTroopsCombined.heavy || 0}`,
-                                inline: true
-                            },
-                            {
-                                name: '<:catapulta:1368839516441280573> **Catapultas**',
-                                value: `${totalTroopsCombined.catapult || 0}`,
-                                inline: true
-                            },
-                            {
-                                name: '<:paladino:1368332901728391319> **Paladinos**',
-                                value: `${totalTroopsCombined.knight || 0}`,
-                                inline: true
-                            }
+                            { name: '🗂️ **Grupo Atual**', value: currentGroup || 'todos', inline: false },
+                            { name: '<:lanceiro:1368839513891409972> **Lanceiros**', value: `${totalTroopsCombined.spear || 0}`, inline: true },
+                            { name: '<:espadachim:1368839514746785844> **Espadachins**', value: `${totalTroopsCombined.sword || 0}`, inline: true },
+                            { name: '<:batedor:1368839512423137404> **Batedores**', value: `${totalTroopsCombined.spy || 0}`, inline: true },
+                            { name: '<:pesada:1368839517997498398> **Cavalaria Pesada**', value: `${totalTroopsCombined.heavy || 0}`, inline: true },
+                            { name: '<:catapulta:1368839516441280573> **Catapultas**', value: `${totalTroopsCombined.catapult || 0}`, inline: true },
+                            { name: '<:paladino:1368332901728391319> **Paladinos**', value: `${totalTroopsCombined.knight || 0}`, inline: true }
                         ]
                     }
                 ]
@@ -226,18 +190,9 @@ $.getScript(
 
         function prepareContent(totalTroops, bbCode) {
             const {
-                spear = 0,
-                sword = 0,
-                axe = 0,
-                archer = 0,
-                spy = 0,
-                light = 0,
-                marcher = 0,
-                heavy = 0,
-                ram = 0,
-                catapult = 0,
-                knight = 0,
-                snob = 0
+                spear = 0, sword = 0, axe = 0, archer = 0, spy = 0,
+                light = 0, marcher = 0, heavy = 0, ram = 0,
+                catapult = 0, knight = 0, snob = 0
             } = totalTroops;
 
             return `
@@ -311,7 +266,6 @@ $.getScript(
 
             jQuery('#combined_table tr:eq(0) th').each(function () {
                 const thImage = jQuery(this).find('img').attr('src');
-
                 if (thImage) {
                     let thImageFilename = thImage.split('/').pop();
                     thImageFilename = thImageFilename.replace('.webp', '');
@@ -323,7 +277,6 @@ $.getScript(
 
             combinedTableRows.each(function () {
                 const rowTroops = {};
-
                 combinedTableHeader.forEach((tableHeader, index) => {
                     if (tableHeader && tableHeader.includes('unit_')) {
                         const unitType = tableHeader.replace('unit_', '');
@@ -331,7 +284,6 @@ $.getScript(
                         rowTroops[unitType] = parseInt(textValue || '0', 10) || 0;
                     }
                 });
-
                 homeTroops.push(rowTroops);
             });
 
@@ -340,18 +292,9 @@ $.getScript(
 
         function getTotalHomeTroops(homeTroops) {
             const totalTroopsAtHome = {
-                spear: 0,
-                sword: 0,
-                axe: 0,
-                archer: 0,
-                spy: 0,
-                light: 0,
-                marcher: 0,
-                heavy: 0,
-                ram: 0,
-                catapult: 0,
-                knight: 0,
-                snob: 0
+                spear: 0, sword: 0, axe: 0, archer: 0, spy: 0,
+                light: 0, marcher: 0, heavy: 0, ram: 0,
+                catapult: 0, knight: 0, snob: 0
             };
 
             for (const obj of homeTroops) {
@@ -383,18 +326,9 @@ $.getScript(
 
         async function getScavengingTroops() {
             const troops = {
-                spear: 0,
-                sword: 0,
-                axe: 0,
-                archer: 0,
-                spy: 0,
-                light: 0,
-                marcher: 0,
-                heavy: 0,
-                ram: 0,
-                catapult: 0,
-                knight: 0,
-                snob: 0
+                spear: 0, sword: 0, axe: 0, archer: 0, spy: 0,
+                light: 0, marcher: 0, heavy: 0, ram: 0,
+                catapult: 0, knight: 0, snob: 0
             };
 
             const hasScavenging = await isScavengingEnabled();
@@ -420,14 +354,14 @@ $.getScript(
                 try {
                     html = await fetchPage(url);
                 } catch (e) {
-                    console.error('Erro ao carregar página de buscas:', e);
+                    console.error('[Troops Script] Erro ao carregar página de buscas:', e);
                     break;
                 }
 
                 const matches = html.match(/ScavengeMassScreen[\s\S]*?(,\n *\[.*?\}{0,3}\],\n)/);
 
                 if (!matches || matches.length <= 1) {
-                    console.log('Não foi encontrado bloco ScavengeMassScreen na página', currentPage);
+                    console.log('[Troops Script] Não foi encontrado bloco ScavengeMassScreen na página', currentPage);
                     break;
                 }
 
@@ -439,7 +373,7 @@ $.getScript(
                 try {
                     scavengingObject = JSON.parse(jsonText);
                 } catch (e) {
-                    console.error('Erro ao interpretar dados das buscas:', e);
+                    console.error('[Troops Script] Erro ao interpretar dados das buscas:', e);
                     break;
                 }
 
@@ -508,7 +442,7 @@ $.getScript(
 
                 return scavengingNode && scavengingNode.textContent.trim() === '1';
             } catch (e) {
-                console.error('Erro ao verificar buscas:', e);
+                console.error('[Troops Script] Erro ao verificar buscas:', e);
                 return false;
             }
         }
@@ -567,7 +501,6 @@ $.getScript(
                 knight: 'Paladinos',
                 snob: 'Nobres'
             };
-
             return unitLabel[key] || '';
         }
     }
