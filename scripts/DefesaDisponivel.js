@@ -1,14 +1,15 @@
 // User Input
 if (typeof DEBUG !== 'boolean') DEBUG = false;
 
-// Webhook do Discord
-var webhookURL = 'COLOCA_AQUI_O_TEU_WEBHOOK_DISCORD';
+// --- NÃO há webhook/token aqui ---
+// Se quiseres enviar para Discord depois, define:
+// var webhookURL = 'https://discord.com/api/webhooks/...';
 
 var scriptConfig = {
     scriptData: {
         prefix: 'ownHomeTroopsCount',
-        name: 'Own Home Troops Count',
-        version: 'v5 + scavenging final',
+        name: 'Own Home Troops Count (Home + Scavenging)',
+        version: 'v6 clean',
         author: 'RedAlert + edit',
         authorUrl: 'https://twscripts.dev/',
         helpLink: 'https://forum.tribalwars.net/index.php?threads/own-home-troops-count.286618/'
@@ -16,7 +17,7 @@ var scriptConfig = {
 
     translations: {
         pt_PT: {
-            'Own Home Troops Count': 'Contagem de Tropa em Casa',
+            'Own Home Troops Count': 'Contagem de Tropa (Casa + Buscas)',
             'Offensive Troops': 'Tropas de Ataque',
             'Defensive Troops': 'Tropas Defensivas',
             'Export Troop Counts': 'Exportar Contagem de Tropas',
@@ -40,39 +41,6 @@ $.getScript(
     async function () {
         await twSDK.init(scriptConfig);
 
-        console.log('[Troops Script] SCRIPT NOVO CARREGADO');
-
-        $('<style>').prop('type', 'text/css').html(`
-            #sendToDiscord.btn-twf {
-                display: block;
-                transition: transform 0.2s, box-shadow 0.2s;
-                margin: 20px auto;
-                padding: 8px 16px;
-                background: linear-gradient(to bottom, #f2e5b6 0%, #d6c58a 100%);
-                border: 1px solid #b59e4c;
-                border-radius: 6px;
-                color: #383020;
-                font-weight: bold;
-                font-size: 14px;
-                border-image: linear-gradient(45deg, #d6c58a, #f2e5b6) 1;
-                text-shadow: 0 1px 0 rgba(255,255,255,0.6);
-                cursor: pointer;
-            }
-
-            #sendToDiscord.btn-twf:active {
-                transform: translateY(0);
-                box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-            }
-
-            #sendToDiscord.btn-twf:hover {
-                background: linear-gradient(to bottom, #e7d49f 0%, #c9b16f 100%);
-                transform: translateY(-2px);
-                border-image-width: 2;
-                box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-            }
-        `).appendTo('head');
-
-        const scriptInfo = twSDK.scriptInfo();
         const isValidScreen = twSDK.checkValidLocation('screen');
         const isValidMode = twSDK.checkValidLocation('mode');
 
@@ -90,46 +58,25 @@ $.getScript(
                 }
             } catch (error) {
                 UI.ErrorMessage('Ocorreu um erro inesperado!');
-                console.error(`${scriptInfo} Error:`, error);
+                console.error(error);
             }
         })();
 
         async function buildUI() {
-            console.log('[Troops Script] buildUI correu');
-
             const homeTroops = collectTroopsAtHome();
-            const totalTroopsAtHome = getTotalHomeTroops(homeTroops);
+            const totalHome = getTotalHomeTroops(homeTroops);
 
-            const scavengingTroops = await getScavengingTroops();
-            const totalTroopsCombined = mergeTroops(totalTroopsAtHome, scavengingTroops);
+            const scavengingTroops = getScavengingTroops();
+            const totalCombined = mergeTroops(totalHome, scavengingTroops);
 
-            window.totalTroopsAtHomeDebug = totalTroopsAtHome;
-            window.scavengingTroopsDebug = scavengingTroops;
-            window.totalTroopsCombinedDebug = totalTroopsCombined;
-
-            console.log('[Troops Script] CASA:', totalTroopsAtHome);
-            console.log('[Troops Script] BUSCAS:', scavengingTroops);
-            console.log('[Troops Script] TOTAL:', totalTroopsCombined);
-
-            const bbCode = getTroopsBBCode(totalTroopsCombined);
-            const content = prepareContent(totalTroopsCombined, bbCode);
+            const bbCode = getTroopsBBCode(totalCombined);
+            const content = prepareContent(totalCombined, bbCode);
 
             twSDK.renderBoxWidget(
                 content,
                 scriptConfig.scriptData.prefix,
                 'ra-own-home-troops-count'
             );
-
-            jQuery('#sendToDiscord').remove();
-            jQuery('.ra-own-home-troops-count').append(`
-                <button id="sendToDiscord" class="btn-twf">
-                    Partilhar defesa disponível no ticket
-                </button>
-            `);
-
-            jQuery('#sendToDiscord').on('click', () => {
-                sendDefensiveTroopsToDiscord(totalTroopsCombined);
-            });
 
             setTimeout(() => {
                 if (!game_data.units.includes('archer')) {
@@ -140,52 +87,6 @@ $.getScript(
                     jQuery('.paladin-world').hide();
                 }
             }, 100);
-        }
-
-        function sendDefensiveTroopsToDiscord(totalTroopsCombined) {
-            const playerName = game_data.player.name;
-            let currentGroup = (jQuery('strong.group-menu-item').text() || 'todos').trim();
-            currentGroup = currentGroup.replace(/^>/, '').replace(/<$/, '').trim();
-
-            if (
-                typeof webhookURL !== 'string' ||
-                !webhookURL.startsWith('https://discord.com/api/webhooks/')
-            ) {
-                alert('❌ Webhook inválido ou não definido.');
-                return;
-            }
-
-            const embedData = {
-                content: `**Tropa Defensiva (Atualizado em: ${getServerTime()})**\n**Jogador:** ${playerName}`,
-                embeds: [
-                    {
-                        title: '**🛡️ TROPA DEFENSIVA**',
-                        fields: [
-                            { name: '🗂️ **Grupo Atual**', value: currentGroup || 'todos', inline: false },
-                            { name: '<:lanceiro:1368839513891409972> **Lanceiros**', value: `${totalTroopsCombined.spear || 0}`, inline: true },
-                            { name: '<:espadachim:1368839514746785844> **Espadachins**', value: `${totalTroopsCombined.sword || 0}`, inline: true },
-                            { name: '<:batedor:1368839512423137404> **Batedores**', value: `${totalTroopsCombined.spy || 0}`, inline: true },
-                            { name: '<:pesada:1368839517997498398> **Cavalaria Pesada**', value: `${totalTroopsCombined.heavy || 0}`, inline: true },
-                            { name: '<:catapulta:1368839516441280573> **Catapultas**', value: `${totalTroopsCombined.catapult || 0}`, inline: true },
-                            { name: '<:paladino:1368332901728391319> **Paladinos**', value: `${totalTroopsCombined.knight || 0}`, inline: true }
-                        ]
-                    }
-                ]
-            };
-
-            $.ajax({
-                url: webhookURL,
-                method: 'POST',
-                contentType: 'application/json',
-                data: JSON.stringify(embedData),
-                success: function () {
-                    alert('Defesa compartilhada com a liderança!');
-                },
-                error: function (xhr) {
-                    console.error('Erro Discord webhook:', xhr);
-                    alert('Houve um erro ao enviar os dados para o Discord.');
-                }
-            });
         }
 
         function prepareContent(totalTroops, bbCode) {
@@ -201,24 +102,24 @@ $.getScript(
                     <table width="100%" class="ra-table">
                         <thead>
                             <tr>
-                                <th width="14.2%"><img src="/graphic/unit/unit_axe.webp"></th>
-                                <th width="14.2%"><img src="/graphic/unit/unit_light.webp"></th>
-                                <th width="14.2%" class="archer-world"><img src="/graphic/unit/unit_marcher.webp"></th>
-                                <th width="14.2%"><img src="/graphic/unit/unit_ram.webp"></th>
-                                <th width="14.2%"><img src="/graphic/unit/unit_catapult.webp"></th>
-                                <th width="14.2%" class="paladin-world"><img src="/graphic/unit/unit_knight.webp"></th>
-                                <th width="14.2%"><img src="/graphic/unit/unit_snob.webp"></th>
+                                <th><img src="/graphic/unit/unit_axe.webp"></th>
+                                <th><img src="/graphic/unit/unit_light.webp"></th>
+                                <th class="archer-world"><img src="/graphic/unit/unit_marcher.webp"></th>
+                                <th><img src="/graphic/unit/unit_ram.webp"></th>
+                                <th><img src="/graphic/unit/unit_catapult.webp"></th>
+                                <th class="paladin-world"><img src="/graphic/unit/unit_knight.webp"></th>
+                                <th><img src="/graphic/unit/unit_snob.webp"></th>
                             </tr>
                         </thead>
                         <tbody>
                             <tr>
-                                <td width="14.2%">${twSDK.formatAsNumber(axe)}</td>
-                                <td width="14.2%">${twSDK.formatAsNumber(light)}</td>
-                                <td width="14.2%" class="archer-world">${twSDK.formatAsNumber(marcher)}</td>
-                                <td width="14.2%">${twSDK.formatAsNumber(ram)}</td>
-                                <td width="14.2%">${twSDK.formatAsNumber(catapult)}</td>
-                                <td width="14.2%" class="paladin-world">${twSDK.formatAsNumber(knight)}</td>
-                                <td width="14.2%">${twSDK.formatAsNumber(snob)}</td>
+                                <td>${twSDK.formatAsNumber(axe)}</td>
+                                <td>${twSDK.formatAsNumber(light)}</td>
+                                <td class="archer-world">${twSDK.formatAsNumber(marcher)}</td>
+                                <td>${twSDK.formatAsNumber(ram)}</td>
+                                <td>${twSDK.formatAsNumber(catapult)}</td>
+                                <td class="paladin-world">${twSDK.formatAsNumber(knight)}</td>
+                                <td>${twSDK.formatAsNumber(snob)}</td>
                             </tr>
                         </tbody>
                     </table>
@@ -229,24 +130,24 @@ $.getScript(
                     <table width="100%" class="ra-table">
                         <thead>
                             <tr>
-                                <th width="14.2%"><img src="/graphic/unit/unit_spear.webp"></th>
-                                <th width="14.2%"><img src="/graphic/unit/unit_sword.webp"></th>
-                                <th width="14.2%" class="archer-world"><img src="/graphic/unit/unit_archer.webp"></th>
-                                <th width="14.2%"><img src="/graphic/unit/unit_spy.webp"></th>
-                                <th width="14.2%"><img src="/graphic/unit/unit_heavy.webp"></th>
-                                <th width="14.2%"><img src="/graphic/unit/unit_catapult.webp"></th>
-                                <th width="14.2%" class="paladin-world"><img src="/graphic/unit/unit_knight.webp"></th>
+                                <th><img src="/graphic/unit/unit_spear.webp"></th>
+                                <th><img src="/graphic/unit/unit_sword.webp"></th>
+                                <th class="archer-world"><img src="/graphic/unit/unit_archer.webp"></th>
+                                <th><img src="/graphic/unit/unit_spy.webp"></th>
+                                <th><img src="/graphic/unit/unit_heavy.webp"></th>
+                                <th><img src="/graphic/unit/unit_catapult.webp"></th>
+                                <th class="paladin-world"><img src="/graphic/unit/unit_knight.webp"></th>
                             </tr>
                         </thead>
                         <tbody>
                             <tr>
-                                <td width="14.2%">${twSDK.formatAsNumber(spear)}</td>
-                                <td width="14.2%">${twSDK.formatAsNumber(sword)}</td>
-                                <td width="14.2%" class="archer-world">${twSDK.formatAsNumber(archer)}</td>
-                                <td width="14.2%">${twSDK.formatAsNumber(spy)}</td>
-                                <td width="14.2%">${twSDK.formatAsNumber(heavy)}</td>
-                                <td width="14.2%">${twSDK.formatAsNumber(catapult)}</td>
-                                <td width="14.2%" class="paladin-world">${twSDK.formatAsNumber(knight)}</td>
+                                <td>${twSDK.formatAsNumber(spear)}</td>
+                                <td>${twSDK.formatAsNumber(sword)}</td>
+                                <td class="archer-world">${twSDK.formatAsNumber(archer)}</td>
+                                <td>${twSDK.formatAsNumber(spy)}</td>
+                                <td>${twSDK.formatAsNumber(heavy)}</td>
+                                <td>${twSDK.formatAsNumber(catapult)}</td>
+                                <td class="paladin-world">${twSDK.formatAsNumber(knight)}</td>
                             </tr>
                         </tbody>
                     </table>
@@ -260,28 +161,27 @@ $.getScript(
         }
 
         function collectTroopsAtHome() {
-            const combinedTableRows = jQuery('#combined_table tr.nowrap');
+            const rows = jQuery('#combined_table tr.nowrap');
+            const header = [];
             const homeTroops = [];
-            const combinedTableHeader = [];
 
             jQuery('#combined_table tr:eq(0) th').each(function () {
-                const thImage = jQuery(this).find('img').attr('src');
-                if (thImage) {
-                    let thImageFilename = thImage.split('/').pop();
-                    thImageFilename = thImageFilename.replace('.webp', '');
-                    combinedTableHeader.push(thImageFilename);
+                const img = jQuery(this).find('img').attr('src');
+                if (img) {
+                    let name = img.split('/').pop().replace('.webp', '');
+                    header.push(name);
                 } else {
-                    combinedTableHeader.push(null);
+                    header.push(null);
                 }
             });
 
-            combinedTableRows.each(function () {
+            rows.each(function () {
                 const rowTroops = {};
-                combinedTableHeader.forEach((tableHeader, index) => {
-                    if (tableHeader && tableHeader.includes('unit_')) {
-                        const unitType = tableHeader.replace('unit_', '');
-                        const textValue = jQuery(this).find(`td:eq(${index})`).text().trim().replace(/\./g, '');
-                        rowTroops[unitType] = parseInt(textValue || '0', 10) || 0;
+                header.forEach((h, index) => {
+                    if (h && h.includes('unit_')) {
+                        const unit = h.replace('unit_', '');
+                        const value = jQuery(this).find(`td:eq(${index})`).text().replace(/\./g, '');
+                        rowTroops[unit] = parseInt(value || '0', 10);
                     }
                 });
                 homeTroops.push(rowTroops);
@@ -291,217 +191,109 @@ $.getScript(
         }
 
         function getTotalHomeTroops(homeTroops) {
-            const totalTroopsAtHome = {
-                spear: 0, sword: 0, axe: 0, archer: 0, spy: 0,
-                light: 0, marcher: 0, heavy: 0, ram: 0,
-                catapult: 0, knight: 0, snob: 0
+            const totals = {
+                spear:0,sword:0,axe:0,archer:0,spy:0,light:0,
+                marcher:0,heavy:0,ram:0,catapult:0,knight:0,snob:0
             };
 
-            for (const obj of homeTroops) {
-                totalTroopsAtHome.spear += obj.spear || 0;
-                totalTroopsAtHome.sword += obj.sword || 0;
-                totalTroopsAtHome.axe += obj.axe || 0;
-                totalTroopsAtHome.archer += obj.archer || 0;
-                totalTroopsAtHome.spy += obj.spy || 0;
-                totalTroopsAtHome.light += obj.light || 0;
-                totalTroopsAtHome.marcher += obj.marcher || 0;
-                totalTroopsAtHome.heavy += obj.heavy || 0;
-                totalTroopsAtHome.ram += obj.ram || 0;
-                totalTroopsAtHome.catapult += obj.catapult || 0;
-                totalTroopsAtHome.knight += obj.knight || 0;
-                totalTroopsAtHome.snob += obj.snob || 0;
-            }
+            homeTroops.forEach(obj=>{
+                Object.keys(totals).forEach(unit=>{
+                    totals[unit]+=obj[unit]||0;
+                });
+            });
 
             if (!game_data.units.includes('archer')) {
-                delete totalTroopsAtHome.archer;
-                delete totalTroopsAtHome.marcher;
+                delete totals.archer;
+                delete totals.marcher;
             }
 
             if (!game_data.units.includes('knight')) {
-                delete totalTroopsAtHome.knight;
+                delete totals.knight;
             }
 
-            return totalTroopsAtHome;
+            return totals;
         }
 
-        async function getScavengingTroops() {
+        function getScavengingTroops() {
             const troops = {
-                spear: 0, sword: 0, axe: 0, archer: 0, spy: 0,
-                light: 0, marcher: 0, heavy: 0, ram: 0,
-                catapult: 0, knight: 0, snob: 0
+                spear:0,sword:0,axe:0,archer:0,spy:0,
+                light:0,marcher:0,heavy:0,ram:0,
+                catapult:0,knight:0,snob:0
             };
 
-            const hasScavenging = await isScavengingEnabled();
-            if (!hasScavenging) {
-                if (!game_data.units.includes('archer')) {
-                    delete troops.archer;
-                    delete troops.marcher;
-                }
-                if (!game_data.units.includes('knight')) {
-                    delete troops.knight;
-                }
+            if (typeof ScavengeMassScreen === "undefined") {
                 return troops;
             }
 
-            let currentPage = 0;
+            try {
+                const villages = ScavengeMassScreen.villages;
 
-            while (true) {
-                const url =
-                    `/game.php?village=${game_data.village.id}&screen=place&mode=scavenge_mass&page=${currentPage}` +
-                    `${game_data.player.sitter !== "0" ? "&t=" + game_data.player.id : ""}`;
+                Object.values(villages).forEach(village=>{
+                    if (!village.options) return;
 
-                let html;
-                try {
-                    html = await fetchPage(url);
-                } catch (e) {
-                    console.error('[Troops Script] Erro ao carregar página de buscas:', e);
-                    break;
-                }
+                    Object.values(village.options).forEach(option=>{
+                        if (!option.scavenging_squad) return;
 
-                const matches = html.match(/ScavengeMassScreen[\s\S]*?(,\n *\[.*?\}{0,3}\],\n)/);
+                        const units = option.scavenging_squad.unit_counts;
 
-                if (!matches || matches.length <= 1) {
-                    console.log('[Troops Script] Não foi encontrado bloco ScavengeMassScreen na página', currentPage);
-                    break;
-                }
-
-                let jsonText = matches[1];
-                jsonText = jsonText.substring(jsonText.indexOf('['));
-                jsonText = jsonText.substring(0, jsonText.length - 2);
-
-                let scavengingObject = [];
-                try {
-                    scavengingObject = JSON.parse(jsonText);
-                } catch (e) {
-                    console.error('[Troops Script] Erro ao interpretar dados das buscas:', e);
-                    break;
-                }
-
-                if (!scavengingObject.length) {
-                    break;
-                }
-
-                jQuery.each(scavengingObject, function (_, villageData) {
-                    if (!villageData.options) return;
-
-                    jQuery.each(villageData.options, function (_, option) {
-                        if (option.scavenging_squad && option.scavenging_squad.unit_counts) {
-                            jQuery.each(option.scavenging_squad.unit_counts, function (key, value) {
-                                if (key !== 'militia' && Object.prototype.hasOwnProperty.call(troops, key)) {
-                                    troops[key] += parseInt(value, 10) || 0;
-                                }
-                            });
-                        }
+                        Object.entries(units).forEach(([unit,value])=>{
+                            if (troops.hasOwnProperty(unit)) {
+                                troops[unit]+=value;
+                            }
+                        });
                     });
                 });
 
-                currentPage++;
-                await sleep(200);
-            }
-
-            if (!game_data.units.includes('archer')) {
-                delete troops.archer;
-                delete troops.marcher;
-            }
-
-            if (!game_data.units.includes('knight')) {
-                delete troops.knight;
+            } catch(e){
+                console.error("Erro a ler buscas:",e);
             }
 
             return troops;
         }
 
-        function mergeTroops(homeTroops, scavengingTroops) {
-            const merged = {};
-            const allKeys = new Set([
-                ...Object.keys(homeTroops),
-                ...Object.keys(scavengingTroops)
-            ]);
-
-            allKeys.forEach((key) => {
-                merged[key] = (homeTroops[key] || 0) + (scavengingTroops[key] || 0);
+        function mergeTroops(home,scavenge){
+            const merged={};
+            const keys=new Set([...Object.keys(home),...Object.keys(scavenge)]);
+            keys.forEach(k=>{
+                merged[k]=(home[k]||0)+(scavenge[k]||0);
             });
-
             return merged;
-        }
-
-        async function isScavengingEnabled() {
-            try {
-                const storageKey = `worldConfigFile_${game_data.world}`;
-                let worldConfig = localStorage.getItem(storageKey);
-
-                if (!worldConfig) {
-                    worldConfig = await fetchPage('/interface.php?func=get_config');
-                    localStorage.setItem(storageKey, worldConfig);
-                }
-
-                const xml = jQuery.parseXML(worldConfig);
-                const scavengingNode = xml.getElementsByTagName('config')[0]
-                    .getElementsByTagName('game')[0]
-                    .getElementsByTagName('scavenging')[0];
-
-                return scavengingNode && scavengingNode.textContent.trim() === '1';
-            } catch (e) {
-                console.error('[Troops Script] Erro ao verificar buscas:', e);
-                return false;
-            }
-        }
-
-        function fetchPage(url) {
-            return new Promise((resolve, reject) => {
-                jQuery.ajax({
-                    url: url,
-                    type: 'GET',
-                    success: function (data) {
-                        resolve(data);
-                    },
-                    error: function (xhr, status, error) {
-                        reject(error);
-                    }
-                });
-            });
-        }
-
-        function sleep(ms) {
-            return new Promise(resolve => setTimeout(resolve, ms));
         }
 
         function getTroopsBBCode(totalTroops) {
             let currentGroup = (jQuery('strong.group-menu-item').text() || 'todos').trim();
-            currentGroup = currentGroup.replace(/^>/, '').replace(/<$/, '').trim();
+            currentGroup = currentGroup.replace(/^>/,'').replace(/<$/,'').trim();
 
-            let bbCode = `[b]Contagem de Tropas em Casa + Buscas (${getServerTime()})[/b]\n`;
-            bbCode += `[b]Grupo Atual:[/b] ${currentGroup}\n\n`;
+            let bbCode=`[b]Contagem de Tropas em Casa + Buscas (${getServerTime()})[/b]\n`;
+            bbCode+=`[b]Grupo Atual:[/b] ${currentGroup}\n\n`;
 
-            for (const [key, value] of Object.entries(totalTroops)) {
-                bbCode += `[unit]${key}[/unit] [b]${twSDK.formatAsNumber(value)}[/b] ${getUnitLabel(key)}\n`;
-            }
+            Object.entries(totalTroops).forEach(([unit,value])=>{
+                bbCode+=`[unit]${unit}[/unit] [b]${twSDK.formatAsNumber(value)}[/b] ${getUnitLabel(unit)}\n`;
+            });
 
             return bbCode;
         }
 
         function getServerTime() {
-            const serverTime = jQuery('#serverTime').text();
-            const serverDate = jQuery('#serverDate').text();
-            return `${serverDate} ${serverTime}`;
+            return jQuery('#serverDate').text()+' '+jQuery('#serverTime').text();
         }
 
         function getUnitLabel(key) {
-            const unitLabel = {
-                spear: 'Lanceiros',
-                sword: 'Espadachins',
-                axe: 'Vikings',
-                archer: 'Arqueiros',
-                spy: 'Batedores',
-                light: 'Cavalaria Leve',
-                marcher: 'Arqueiros Montados',
-                heavy: 'Cavalaria Pesada',
-                ram: 'Aríetes',
-                catapult: 'Catapultas',
-                knight: 'Paladinos',
-                snob: 'Nobres'
+            const labels={
+                spear:'Lanceiros',
+                sword:'Espadachins',
+                axe:'Vikings',
+                archer:'Arqueiros',
+                spy:'Batedores',
+                light:'Cavalaria Leve',
+                marcher:'Arqueiros Montados',
+                heavy:'Cavalaria Pesada',
+                ram:'Aríetes',
+                catapult:'Catapultas',
+                knight:'Paladinos',
+                snob:'Nobres'
             };
-            return unitLabel[key] || '';
+            return labels[key]||'';
         }
     }
 );
