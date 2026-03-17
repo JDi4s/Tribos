@@ -1,233 +1,972 @@
-/* * Script: Own Home Troops Count + Offensive State
- * Autor: RedAlert (Base) & Gemini (Refinement)
- * Modo: Visualização Combinado
- */
+(function () {
+    var SCRIPT_NS = 'nobres_calculator_modern';
+    var DIALOG_ID = 'nobres_calculator_dialog';
 
-if (typeof DEBUG !== 'boolean') DEBUG = false;
+    try { $(document).off('.' + SCRIPT_NS); } catch (e) {}
+    try { Dialog.close(); } catch (e) {}
+    try { delete window.nobresCalculator; } catch (e) { window.nobresCalculator = undefined; }
 
-var scriptConfig = {
-  scriptData: {
-    prefix: 'ownHomeTroopsCount',
-    name:   'Own Home Troops Count & Nukes',
-    version:'v3.0 (Offensive Update)',
-    author: 'RedAlert',
-    authorUrl: 'https://twscripts.dev/',
-    helpLink:  'https://forum.tribalwars.net/index.php?threads/own-home-troops-count.286618/'
-  },
-  translations: {
-    pt_PT: {
-      'Own Home Troops Count': 'Contagem de Tropa e Nukes',
-      'Redirecting...': 'A redirecionar...',
-      Help: 'Ajuda'
-    }
-  },
-  allowedMarkets: [],
-  allowedScreens: ['overview_villages'],
-  allowedModes: ['combined'],
-  isDebug: DEBUG,
-  enableCountApi: true
-};
-
-$.getScript(
-    `https://twscripts.dev/scripts/twSDK.js?url=${document.currentScript.src}`,
-    async function () {
-        await twSDK.init(scriptConfig);
-        
-        $('<style>').prop('type','text/css').html(`
-            #sendToDiscord.btn-twf {
-                display: block;
-                transition: transform 0.2s, box-shadow 0.2s;
-                margin: 20px auto;
-                padding: 8px 16px;
-                background: linear-gradient(to bottom, #f2e5b6 0%, #d6c58a 100%);
-                border: 1px solid #b59e4c;
-                border-radius: 6px;
-                color: #383020;
-                font-weight: bold;
-                font-size: 14px;
-                cursor: pointer;
-            }
-            #sendToDiscord.btn-twf:hover {
-                background: linear-gradient(to bottom, #e7d49f 0%, #c9b16f 100%);
-                transform: translateY(-2px);
-                box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-            }
-            #sendToDiscord.btn-twf img {
-                max-width: 20px;
-                vertical-align: middle;
-                margin-right: 8px;
-            }
-            .nuke-badge {
-                display: inline-block;
-                padding: 2px 6px;
-                border-radius: 4px;
-                color: #fff;
-                font-weight: bold;
-                font-size: 0.9em;
-            }
-            .bg-full { background: #8b0000; }
-            .bg-semi { background: #cd5c5c; }
-            .bg-rec { background: #777; }
-        `).appendTo('head');
-
-        (function () {
-            try {
-                if (game_data.features.Premium.active) {
-                    if (twSDK.checkValidLocation('screen') && twSDK.checkValidLocation('mode')) {
-                        buildUI();
-                    } else {
-                        UI.InfoMessage('A redirecionar...');
-                        twSDK.redirectTo('overview_villages&mode=combined');
-                    }
-                } else {
-                    UI.ErrorMessage('Necessário Conta Premium!');
+    class NobresCalculator {
+        static translations() {
+            return {
+                pt_PT: {
+                    title: 'Calculadora de Nobres',
+                    subtitle: 'Recursos totais, moedas e próximos nobres',
+                    loading: 'A carregar...',
+                    loadingWorldConfig: 'A carregar configuração do mundo...',
+                    loadingResources: 'A somar recursos de todas as aldeias...',
+                    loadingSnob: 'A analisar academia...',
+                    success: 'Calculado com sucesso!',
+                    errorFetching: 'Erro ao carregar:',
+                    premiumRequired: 'É necessário possuir conta premium para correr este script!',
+                    currentGroup: 'Grupo atual',
+                    player: 'Jogador',
+                    world: 'Mundo',
+                    refresh: 'Atualizar',
+                    calculate: 'Calcular',
+                    copy: 'Copiar resumo',
+                    totalResources: 'Recursos totais',
+                    costs: 'Custos usados',
+                    results: 'Resultado',
+                    nextNoble: 'Próximo nobre',
+                    discount: 'Desconto moeda (%)',
+                    coinCost: 'Custo da moeda',
+                    snobCost: 'Custo do nobre',
+                    affordableNow: 'Nobres possíveis',
+                    nextCost: 'Custo do próximo',
+                    afterThat: 'Seguinte depois',
+                    resourcesLeft: 'Recursos sobrantes',
+                    detectionNote: 'Podes ajustar manualmente o próximo nobre e o desconto.',
+                    credits: 'Calculadora de Nobres by JDi4s',
+                    wood: 'Madeira',
+                    stone: 'Barro',
+                    iron: 'Ferro',
+                    coins: 'Moedas',
+                    invalidWorldConfig: 'Configuração do mundo inválida.'
+                },
+                en_US: {
+                    title: 'Noble Calculator',
+                    subtitle: 'Total resources, coins and next nobles',
+                    loading: 'Loading...',
+                    loadingWorldConfig: 'Loading world config...',
+                    loadingResources: 'Summing resources from all villages...',
+                    loadingSnob: 'Reading academy...',
+                    success: 'Calculated successfully!',
+                    errorFetching: 'Error while fetching:',
+                    premiumRequired: 'A premium account is required to run this script!',
+                    currentGroup: 'Current group',
+                    player: 'Player',
+                    world: 'World',
+                    refresh: 'Refresh',
+                    calculate: 'Calculate',
+                    copy: 'Copy summary',
+                    totalResources: 'Total resources',
+                    costs: 'Costs used',
+                    results: 'Results',
+                    nextNoble: 'Next noble',
+                    discount: 'Coin discount (%)',
+                    coinCost: 'Coin cost',
+                    snobCost: 'Noble cost',
+                    affordableNow: 'Affordable nobles',
+                    nextCost: 'Next cost',
+                    afterThat: 'After that',
+                    resourcesLeft: 'Resources left',
+                    detectionNote: 'You can manually adjust next noble and discount.',
+                    credits: 'Noble Calculator by JDi4s',
+                    wood: 'Wood',
+                    stone: 'Clay',
+                    iron: 'Iron',
+                    coins: 'Coins',
+                    invalidWorldConfig: 'Invalid world configuration.'
                 }
-            } catch (e) { console.error(e); }
-        })();
-
-        function buildUI() {
-            const homeTroops = collectTroopsAtHome();
-            const totalTroopsAtHome = getTotalHomeTroops(homeTroops);
-            const nukeStatus = calculateNukeStatus(homeTroops);
-            const bbCode = getTroopsBBCode(totalTroopsAtHome, nukeStatus);
-            
-            const content = prepareContent(totalTroopsAtHome, nukeStatus, bbCode);
-
-            twSDK.renderBoxWidget(content, scriptConfig.scriptData.prefix, 'ra-own-home-troops-count');
-
-            jQuery('#sendToDiscord').remove();
-            jQuery('.ra-own-home-troops-count').append(`
-                <button id="sendToDiscord" class="btn-twf">
-                    <img src="https://i.imgur.com/8n7jRL9.png"> Partilhar Dados no Ticket
-                </button>
-            `);
-
-            jQuery('#sendToDiscord').on('click', () => {
-                sendToDiscord(totalTroopsAtHome, nukeStatus);
-            });
-
-            if (!game_data.units.includes('archer')) jQuery('.archer-world').hide();
-            if (!game_data.units.includes('knight')) jQuery('.paladin-world').hide();
+            };
         }
 
-        function calculateNukeStatus(homeTroops) {
-            let status = { full: 0, semi: 0, rebuilding: 0 };
-            homeTroops.forEach(v => {
-                // Cálculo de pop ofensiva (Machados, Leve, Arq. Montados, Aríetes, Catas)
-                let pop = (v.axe * 1) + (v.light * 4) + ((v.marcher || 0) * 5) + (v.ram * 5) + (v.catapult * 8);
-                if (pop >= 19000) status.full++;
-                else if (pop >= 10000) status.semi++;
-                else if (pop >= 2000) status.rebuilding++;
-            });
-            return status;
+        constructor() {
+            const allTranslations = NobresCalculator.translations();
+            this.t = allTranslations[game_data.locale] || allTranslations.en_US;
+            this.worldConfig = null;
+            this.worldConfigFileName = `worldConfigFile_${game_data.world}`;
+            this.detectedData = null;
+            this.totalResources = null;
+            this.settingsKey = `nobresCalculatorSettings_${game_data.world}_${game_data.player.id}`;
         }
 
-        function sendToDiscord(total, nuke) {
-            if (typeof webhookURL === 'undefined') {
-                alert("Erro: Link do Discord não encontrado na Quickbar!");
+        async init() {
+            if (!game_data.features.Premium.active) {
+                UI.ErrorMessage(this.t.premiumRequired);
                 return;
             }
 
-            const embedData = {
-                content: `**Resumo de Conta - ${game_data.player.name}**\nData: ${getServerTime()}`,
-                embeds: [{
-                    title: "🛡️ DEFESA DISPONÍVEL",
-                    color: 3066993,
-                    fields: [
-                        { name: "Lanceiros", value: `${twSDK.formatAsNumber(total.spear)}`, inline: true },
-                        { name: "Espadachins", value: `${twSDK.formatAsNumber(total.sword)}`, inline: true },
-                        { name: "C. Pesada", value: `${twSDK.formatAsNumber(total.heavy)}`, inline: true }
-                    ]
-                },
-                {
-                    title: "⚔️ ESTADO DOS NUKES (Aldeias)",
-                    color: 15158332,
-                    fields: [
-                        { name: "🚀 Fulls (19k+)", value: `${nuke.full}`, inline: true },
-                        { name: "📈 Semis (10k+)", value: `${nuke.semi}`, inline: true },
-                        { name: "🛠️ Recrutar", value: `${nuke.rebuilding}`, inline: true }
-                    ]
-                }]
-            };
+            await this.#initWorldConfig();
+            await this.#loadData();
+            await this.#createUI();
+        }
+
+        async #initWorldConfig() {
+            let worldConfig = localStorage.getItem(this.worldConfigFileName);
+
+            if (worldConfig === null) {
+                UI.InfoMessage(this.t.loadingWorldConfig);
+                worldConfig = await this.#getWorldConfig();
+            }
+
+            this.worldConfig =
+                typeof worldConfig === 'string'
+                    ? $.parseXML(worldConfig)
+                    : worldConfig;
+
+            try {
+                this.worldConfig.getElementsByTagName('config')[0];
+            } catch (e) {
+                UI.ErrorMessage(this.t.invalidWorldConfig);
+                throw e;
+            }
+        }
+
+        async #getWorldConfig() {
+            const xml = this.#fetchHtmlPage('/interface.php?func=get_config');
+            const xmlString =
+                typeof xml === 'string'
+                    ? xml
+                    : new XMLSerializer().serializeToString(xml);
+
+            localStorage.setItem(this.worldConfigFileName, xmlString);
+            await this.#waitMilliseconds(Date.now(), 200);
+            return xmlString;
+        }
+
+        async #loadData() {
+            UI.InfoMessage(this.t.loadingResources);
+            this.totalResources = await this.#getTotalResources();
+
+            UI.InfoMessage(this.t.loadingSnob);
+            this.detectedData = await this.#getSnobData();
+        }
+
+        async #waitMilliseconds(lastRunTime, milliseconds = 0) {
+            await new Promise(res => {
+                setTimeout(res, Math.max((lastRunTime || 0) + milliseconds - Date.now(), 0));
+            });
+        }
+
+        #generateUrl(screen, mode = null, extraParams = {}) {
+            let url = `/game.php?village=${game_data.village.id}&screen=${screen}`;
+            if (mode !== null) url += `&mode=${mode}`;
+
+            $.each(extraParams, function (key, value) {
+                url += `&${key}=${value}`;
+            });
+
+            if (game_data.player.sitter !== "0") url += "&t=" + game_data.player.id;
+            return url;
+        }
+
+        #fetchHtmlPage(url) {
+            let tempData = null;
+            const self = this;
 
             $.ajax({
-                url: webhookURL,
-                method: 'POST',
-                contentType: 'application/json',
-                data: JSON.stringify(embedData),
-                success: () => UI.SuccessMessage("Enviado com sucesso!"),
-                error: () => UI.ErrorMessage("Erro ao enviar para o Discord.")
+                async: false,
+                url: url,
+                type: 'GET',
+                success: function (data) {
+                    tempData = data;
+                },
+                error: function () {
+                    UI.ErrorMessage(`${self.t.errorFetching} ${url}`);
+                }
+            });
+
+            return tempData;
+        }
+
+        async #setMaxLinesPerPage(screen, mode, value) {
+            await new Promise(res => setTimeout(res, 200));
+
+            const form = document.createElement("form");
+            form.method = "POST";
+            form.action = "#";
+
+            $.each({ page_size: value, h: game_data.csrf }, function (key, value) {
+                const input = document.createElement('input');
+                input.name = key;
+                input.value = value;
+                form.appendChild(input);
+            });
+
+            const dataString = $(form).serialize();
+
+            $.ajax({
+                type: 'POST',
+                url: this.#generateUrl(screen, mode, { action: 'change_page_size', type: 'all' }),
+                data: dataString,
+                async: false
             });
         }
 
-        function prepareContent(total, nuke, bbCode) {
-            return `
-                <div class="ra-mb15">
-                    <h4>Estado de Ataque (Aldeias)</h4>
-                    <div style="display:flex; justify-content: space-around; background: #f4e4bc; padding: 10px; border-radius: 5px; border: 1px solid #d2c29d;">
-                        <div style="text-align:center">🚀 <br><b>${nuke.full}</b><br><span class="nuke-badge bg-full">Fulls</span></div>
-                        <div style="text-align:center">📈 <br><b>${nuke.semi}</b><br><span class="nuke-badge bg-semi">Semis</span></div>
-                        <div style="text-align:center">🛠️ <br><b>${nuke.rebuilding}</b><br><span class="nuke-badge bg-rec">A Recrutar</span></div>
+        #formatNumber(value) {
+            return new Intl.NumberFormat('pt-PT').format(Math.floor(Number(value || 0)));
+        }
+
+        #getCurrentGroupName() {
+            const html = $.parseHTML(
+                this.#fetchHtmlPage(this.#generateUrl('overview_villages', 'groups', { type: 'static' }))
+            );
+
+            let groups = $(html).find('.vis_item').find('a,strong');
+            const groupsArr = {};
+
+            if ($(groups).length > 0) {
+                $.each(groups, function (_, group) {
+                    const val = $(group).text().trim();
+                    groupsArr[group.getAttribute('data-group-id')] = val.substring(1, val.length - 1);
+                });
+            } else {
+                groups = $(html).find('.vis_item select option');
+                $.each(groups, function (_, group) {
+                    groupsArr[(new URLSearchParams($(group).val())).get('group')] = $(group).text().trim();
+                });
+            }
+
+            return (game_data.group_id && groupsArr[game_data.group_id]) || this.t.currentGroup;
+        }
+
+        #getSnobFactor() {
+            try {
+                const snob = this.worldConfig.getElementsByTagName('snob')[0];
+                const factorNode = snob.getElementsByTagName('factor')[0];
+                const factor = parseFloat(factorNode.textContent.trim());
+                return isNaN(factor) ? 1 : factor;
+            } catch (e) {
+                return 1;
+            }
+        }
+
+        async #getTotalResources() {
+            const totals = { wood: 0, stone: 0, iron: 0 };
+            let currentPage = 0;
+            let lastRunTime = Date.now();
+
+            await this.#setMaxLinesPerPage('overview_villages', 'prod', 1000);
+            await this.#waitMilliseconds(lastRunTime, 200);
+
+            let lastVillageId = null;
+
+            do {
+                lastRunTime = Date.now();
+
+                const rawPage = this.#fetchHtmlPage(
+                    this.#generateUrl('overview_villages', 'prod', { page: currentPage })
+                );
+                if (!rawPage) break;
+
+                const pageHtml = $.parseHTML(rawPage);
+                const table = $(pageHtml).find('#production_table');
+                if (!table.length) break;
+
+                const headerMap = {};
+                $(table).find('thead th').each(function (idx) {
+                    const img = $(this).find('img').attr('src') || '';
+                    if (img.includes('holz')) headerMap.wood = idx;
+                    if (img.includes('lehm')) headerMap.stone = idx;
+                    if (img.includes('eisen')) headerMap.iron = idx;
+                });
+
+                const rows = $(table).find('tbody tr');
+                if (!rows.length) break;
+
+                const firstVillageId = $(rows).find('span.quickedit-vn').eq(0).attr('data-id') ||
+                                       $(rows).find('span[data-id]').eq(0).attr('data-id');
+
+                if (!firstVillageId) break;
+                if (lastVillageId !== null && lastVillageId === firstVillageId) break;
+                lastVillageId = firstVillageId;
+
+                rows.each(function () {
+                    const cells = $(this).find('td');
+                    const wood = parseInt(String($(cells.eq(headerMap.wood)).text()).replace(/\D/g, ''), 10) || 0;
+                    const stone = parseInt(String($(cells.eq(headerMap.stone)).text()).replace(/\D/g, ''), 10) || 0;
+                    const iron = parseInt(String($(cells.eq(headerMap.iron)).text()).replace(/\D/g, ''), 10) || 0;
+
+                    totals.wood += wood;
+                    totals.stone += stone;
+                    totals.iron += iron;
+                });
+
+                currentPage++;
+                await this.#waitMilliseconds(lastRunTime, 200);
+            } while (true);
+
+            return totals;
+        }
+
+        async #getSnobData() {
+            const html = this.#fetchHtmlPage(this.#generateUrl('snob'));
+            const htmlText = typeof html === 'string' ? html : new XMLSerializer().serializeToString(html);
+            const factor = this.#getSnobFactor();
+
+            const baseCoinCost = {
+                wood: Math.ceil(28000 * factor),
+                stone: Math.ceil(30000 * factor),
+                iron: Math.ceil(25000 * factor)
+            };
+
+            const baseSnobCost = {
+                wood: Math.ceil(40000 * factor),
+                stone: Math.ceil(50000 * factor),
+                iron: Math.ceil(50000 * factor)
+            };
+
+            let nextNobleCoins = 1;
+
+            const regexes = [
+                /(?:pr[óo]ximo\s+nobre|next\s+noble)[\s\S]{0,120}?(\d+)\s*(?:moedas?|coins?)/i,
+                /(?:custa|costs?)[\s\S]{0,120}?(\d+)\s*(?:moedas?|coins?)[\s\S]{0,120}?(?:nobre|noble)/i,
+                /(\d+)\s*(?:moedas?|coins?)[\s\S]{0,120}?(?:pr[óo]ximo\s+nobre|next\s+noble)/i,
+                /gold_coins?[^0-9]{0,20}(\d+)/i
+            ];
+
+            for (const rx of regexes) {
+                const m = htmlText.match(rx);
+                if (m && m[1]) {
+                    nextNobleCoins = parseInt(m[1], 10) || 1;
+                    break;
+                }
+            }
+
+            const saved = this.#loadSettings();
+
+            return {
+                coinCost: baseCoinCost,
+                snobCost: baseSnobCost,
+                nextNobleCoins: saved.nextNobleCoins || nextNobleCoins,
+                discount: typeof saved.discount === 'number' ? saved.discount : 0
+            };
+        }
+
+        #loadSettings() {
+            try {
+                const raw = localStorage.getItem(this.settingsKey);
+                return raw ? JSON.parse(raw) : {};
+            } catch (e) {
+                return {};
+            }
+        }
+
+        #saveSettings(settings) {
+            localStorage.setItem(this.settingsKey, JSON.stringify(settings));
+        }
+
+        #getDiscountedCoinCost(coinCost, discountPercent) {
+            const multiplier = Math.max(0, 1 - (Number(discountPercent || 0) / 100));
+
+            return {
+                wood: Math.ceil(coinCost.wood * multiplier),
+                stone: Math.ceil(coinCost.stone * multiplier),
+                iron: Math.ceil(coinCost.iron * multiplier)
+            };
+        }
+
+        #getSingleNobleCost(coinsNeeded, discountedCoinCost, snobCost) {
+            return {
+                wood: snobCost.wood + discountedCoinCost.wood * coinsNeeded,
+                stone: snobCost.stone + discountedCoinCost.stone * coinsNeeded,
+                iron: snobCost.iron + discountedCoinCost.iron * coinsNeeded
+            };
+        }
+
+        #canAfford(resources, cost) {
+            return (
+                resources.wood >= cost.wood &&
+                resources.stone >= cost.stone &&
+                resources.iron >= cost.iron
+            );
+        }
+
+        #calculatePlan(totalResources, coinCost, snobCost, nextNobleCoins, discountPercent) {
+            const discountedCoinCost = this.#getDiscountedCoinCost(coinCost, discountPercent);
+
+            let resources = {
+                wood: totalResources.wood,
+                stone: totalResources.stone,
+                iron: totalResources.iron
+            };
+
+            let nobles = 0;
+            let currentCoins = Number(nextNobleCoins || 1);
+
+            while (true) {
+                const cost = this.#getSingleNobleCost(currentCoins, discountedCoinCost, snobCost);
+                if (!this.#canAfford(resources, cost)) break;
+
+                resources.wood -= cost.wood;
+                resources.stone -= cost.stone;
+                resources.iron -= cost.iron;
+
+                nobles++;
+                currentCoins++;
+            }
+
+            const nextCost = this.#getSingleNobleCost(currentCoins, discountedCoinCost, snobCost);
+            const afterThatCost = this.#getSingleNobleCost(currentCoins + 1, discountedCoinCost, snobCost);
+
+            return {
+                affordableNobles: nobles,
+                nextCoinsNeeded: currentCoins,
+                discountedCoinCost,
+                nextCost,
+                afterThatCost,
+                resourcesLeft: resources
+            };
+        }
+
+        #buildSummaryText(plan, detected) {
+            return [
+                `${this.t.player}: ${game_data.player.name}`,
+                `${this.t.world}: ${game_data.world}`,
+                `${this.t.currentGroup}: ${this.#getCurrentGroupName()}`,
+                '',
+                `${this.t.affordableNow}: ${plan.affordableNobles}`,
+                `${this.t.nextNoble}: ${plan.nextCoinsNeeded} ${this.t.coins}`,
+                `${this.t.discount}: ${detected.discount}%`,
+                '',
+                `${this.t.nextCost}:`,
+                `${this.t.wood}: ${this.#formatNumber(plan.nextCost.wood)}`,
+                `${this.t.stone}: ${this.#formatNumber(plan.nextCost.stone)}`,
+                `${this.t.iron}: ${this.#formatNumber(plan.nextCost.iron)}`,
+                '',
+                `${this.t.resourcesLeft}:`,
+                `${this.t.wood}: ${this.#formatNumber(plan.resourcesLeft.wood)}`,
+                `${this.t.stone}: ${this.#formatNumber(plan.resourcesLeft.stone)}`,
+                `${this.t.iron}: ${this.#formatNumber(plan.resourcesLeft.iron)}`
+            ].join('\n');
+        }
+
+        async #createUI() {
+            const detected = this.detectedData;
+            const plan = this.#calculatePlan(
+                this.totalResources,
+                detected.coinCost,
+                detected.snobCost,
+                detected.nextNobleCoins,
+                detected.discount
+            );
+
+            const t = this.t;
+            const currentGroupName = this.#getCurrentGroupName();
+            const playerName = game_data.player.name;
+            const worldName = game_data.world;
+
+            const html = `
+<div id="nc-root">
+    <div class="nc-shell">
+        <div class="nc-header">
+            <div class="nc-header-left">
+                <div class="nc-kicker">Tribal Wars</div>
+                <h3>${t.title}</h3>
+                <div class="nc-sub">${t.subtitle}</div>
+            </div>
+            <div class="nc-header-right">
+                <div class="nc-stamp">${playerName}</div>
+            </div>
+        </div>
+
+        <div class="nc-topbar">
+            <div class="nc-meta">
+                <div class="nc-pill">
+                    <span class="nc-pill-label">${t.currentGroup}</span>
+                    <strong>${currentGroupName}</strong>
+                </div>
+                <div class="nc-pill">
+                    <span class="nc-pill-label">${t.player}</span>
+                    <strong>${playerName}</strong>
+                </div>
+                <div class="nc-pill">
+                    <span class="nc-pill-label">${t.world}</span>
+                    <strong>${worldName}</strong>
+                </div>
+            </div>
+
+            <div class="nc-actions">
+                <button id="nc-refresh" class="nc-btn nc-btn-secondary">${t.refresh}</button>
+                <button id="nc-recalc" class="nc-btn nc-btn-primary">${t.calculate}</button>
+                <button id="nc-copy-summary" class="nc-btn nc-btn-secondary">${t.copy}</button>
+            </div>
+        </div>
+
+        <div class="nc-grid">
+            <div class="nc-panel">
+                <div class="nc-panel-head">
+                    <h4>${t.totalResources}</h4>
+                </div>
+                <div class="nc-resource-grid">
+                    ${renderResourceCard('wood', this.totalResources.wood, t.wood)}
+                    ${renderResourceCard('stone', this.totalResources.stone, t.stone)}
+                    ${renderResourceCard('iron', this.totalResources.iron, t.iron)}
+                </div>
+            </div>
+
+            <div class="nc-panel">
+                <div class="nc-panel-head">
+                    <h4>${t.costs}</h4>
+                </div>
+
+                <div class="nc-form-row">
+                    <label>${t.nextNoble}</label>
+                    <input id="nc-next-noble" type="number" min="1" value="${detected.nextNobleCoins}">
+                </div>
+
+                <div class="nc-form-row">
+                    <label>${t.discount}</label>
+                    <input id="nc-discount" type="number" min="0" max="100" step="0.1" value="${detected.discount}">
+                </div>
+
+                <div class="nc-cost-block">
+                    <div class="nc-cost-title">${t.coinCost}</div>
+                    <div class="nc-cost-line">${t.wood}: <strong>${this.#formatNumber(plan.discountedCoinCost.wood)}</strong></div>
+                    <div class="nc-cost-line">${t.stone}: <strong>${this.#formatNumber(plan.discountedCoinCost.stone)}</strong></div>
+                    <div class="nc-cost-line">${t.iron}: <strong>${this.#formatNumber(plan.discountedCoinCost.iron)}</strong></div>
+                </div>
+
+                <div class="nc-cost-block">
+                    <div class="nc-cost-title">${t.snobCost}</div>
+                    <div class="nc-cost-line">${t.wood}: <strong>${this.#formatNumber(detected.snobCost.wood)}</strong></div>
+                    <div class="nc-cost-line">${t.stone}: <strong>${this.#formatNumber(detected.snobCost.stone)}</strong></div>
+                    <div class="nc-cost-line">${t.iron}: <strong>${this.#formatNumber(detected.snobCost.iron)}</strong></div>
+                </div>
+
+                <div class="nc-note">${t.detectionNote}</div>
+            </div>
+        </div>
+
+        <div class="nc-grid nc-results-grid">
+            <div class="nc-panel">
+                <div class="nc-panel-head">
+                    <h4>${t.results}</h4>
+                </div>
+
+                <div class="nc-results-cards">
+                    <div class="nc-result-card">
+                        <div class="nc-result-label">${t.affordableNow}</div>
+                        <div class="nc-result-value">${plan.affordableNobles}</div>
+                    </div>
+                    <div class="nc-result-card">
+                        <div class="nc-result-label">${t.nextNoble}</div>
+                        <div class="nc-result-value">${plan.nextCoinsNeeded} ${t.coins}</div>
                     </div>
                 </div>
-                <div class="ra-mb15">
-                    <h4>Tropa Defensiva Total</h4>
-                    <table width="100%" class="ra-table">
-                        <thead>
-                            <tr>
-                                <th><img src="/graphic/unit/unit_spear.webp"></th>
-                                <th><img src="/graphic/unit/unit_sword.webp"></th>
-                                <th class="archer-world"><img src="/graphic/unit/unit_archer.webp"></th>
-                                <th><img src="/graphic/unit/unit_heavy.webp"></th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr style="text-align:center">
-                                <td>${twSDK.formatAsNumber(total.spear)}</td>
-                                <td>${twSDK.formatAsNumber(total.sword)}</td>
-                                <td class="archer-world">${twSDK.formatAsNumber(total.archer)}</td>
-                                <td>${twSDK.formatAsNumber(total.heavy)}</td>
-                            </tr>
-                        </tbody>
-                    </table>
+            </div>
+
+            <div class="nc-panel">
+                <div class="nc-panel-head">
+                    <h4>${t.nextCost}</h4>
                 </div>
-                <textarea readonly class="ra-textarea" style="height:60px;">${bbCode.trim()}</textarea>
-            `;
-        }
+                <div class="nc-cost-line">${t.wood}: <strong>${this.#formatNumber(plan.nextCost.wood)}</strong></div>
+                <div class="nc-cost-line">${t.stone}: <strong>${this.#formatNumber(plan.nextCost.stone)}</strong></div>
+                <div class="nc-cost-line">${t.iron}: <strong>${this.#formatNumber(plan.nextCost.iron)}</strong></div>
+            </div>
 
-        function collectTroopsAtHome() {
-            const rows = jQuery('#combined_table tr.nowrap');
-            let data = [];
-            let header = [];
-            jQuery('#combined_table tr:eq(0) th img').each(function() {
-                header.push(jQuery(this).attr('src').split('/').pop().replace('.webp','').replace('unit_',''));
+            <div class="nc-panel">
+                <div class="nc-panel-head">
+                    <h4>${t.afterThat}</h4>
+                </div>
+                <div class="nc-cost-line">${t.wood}: <strong>${this.#formatNumber(plan.afterThatCost.wood)}</strong></div>
+                <div class="nc-cost-line">${t.stone}: <strong>${this.#formatNumber(plan.afterThatCost.stone)}</strong></div>
+                <div class="nc-cost-line">${t.iron}: <strong>${this.#formatNumber(plan.afterThatCost.iron)}</strong></div>
+            </div>
+        </div>
+
+        <div class="nc-panel nc-leftover">
+            <div class="nc-panel-head">
+                <h4>${t.resourcesLeft}</h4>
+            </div>
+            <div class="nc-resource-grid">
+                ${renderResourceCard('wood', plan.resourcesLeft.wood, t.wood)}
+                ${renderResourceCard('stone', plan.resourcesLeft.stone, t.stone)}
+                ${renderResourceCard('iron', plan.resourcesLeft.iron, t.iron)}
+            </div>
+        </div>
+
+        <div class="nc-footer">${t.credits}</div>
+    </div>
+</div>
+
+<style>
+.popup_box_content {
+    min-width: 980px;
+    background: transparent !important;
+}
+.mds .popup_box_content {
+    min-width: unset !important;
+}
+
+#nc-root {
+    color: #f3e9d2;
+    font-family: Arial, sans-serif;
+}
+
+#nc-root .nc-shell {
+    background: linear-gradient(180deg, rgba(34,24,17,.96) 0%, rgba(23,16,11,.98) 100%);
+    border: 1px solid #6d5231;
+    border-radius: 18px;
+    box-shadow: 0 18px 45px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.04);
+    overflow: hidden;
+}
+
+#nc-root .nc-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    padding: 20px 22px;
+    background: linear-gradient(135deg, rgba(88,57,29,.95) 0%, rgba(59,37,20,.97) 100%);
+    border-bottom: 1px solid #7c5b36;
+}
+
+#nc-root .nc-kicker {
+    color: #d6b98a;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .12em;
+    margin-bottom: 6px;
+}
+
+#nc-root h3 {
+    margin: 0;
+    font-size: 24px;
+    color: #fff3da;
+}
+
+#nc-root .nc-sub {
+    margin-top: 6px;
+    color: #d9c4a0;
+    font-size: 12px;
+}
+
+#nc-root .nc-stamp {
+    background: rgba(0,0,0,.18);
+    border: 1px solid rgba(255,255,255,.08);
+    color: #f6e7c9;
+    padding: 10px 12px;
+    border-radius: 12px;
+    font-weight: 700;
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+#nc-root .nc-topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+    padding: 16px 22px;
+    background: rgba(0,0,0,.18);
+    border-bottom: 1px solid rgba(255,255,255,.05);
+}
+
+#nc-root .nc-meta {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+#nc-root .nc-pill {
+    background: linear-gradient(180deg, #3a2819 0%, #2b1d12 100%);
+    border: 1px solid #6b4f31;
+    border-radius: 999px;
+    padding: 8px 12px;
+    color: #f2e1c0;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+#nc-root .nc-pill-label {
+    color: #c9ae80;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+}
+
+#nc-root .nc-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+#nc-root .nc-btn {
+    height: 38px;
+    padding: 0 14px;
+    border-radius: 10px;
+    border: 1px solid #7d5b33;
+    cursor: pointer;
+    font-weight: 700;
+    transition: .15s ease;
+}
+
+#nc-root .nc-btn:hover {
+    transform: translateY(-1px);
+    filter: brightness(1.04);
+}
+
+#nc-root .nc-btn-secondary {
+    background: linear-gradient(180deg, #4d3723 0%, #372517 100%);
+    color: #f5e6c8;
+}
+
+#nc-root .nc-btn-primary {
+    background: linear-gradient(180deg, #b8863b 0%, #8d6228 100%);
+    color: #fff8ea;
+    border-color: #c89b53;
+}
+
+#nc-root .nc-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    padding: 18px 22px;
+}
+
+#nc-root .nc-results-grid {
+    grid-template-columns: 1fr 1fr 1fr;
+    padding-top: 0;
+}
+
+#nc-root .nc-panel {
+    background: linear-gradient(180deg, #2d1f14 0%, #21160e 100%);
+    border: 1px solid #644a2d;
+    border-radius: 16px;
+    padding: 16px;
+}
+
+#nc-root .nc-panel-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+#nc-root .nc-panel-head h4 {
+    margin: 0;
+    color: #fff1d5;
+    font-size: 16px;
+}
+
+#nc-root .nc-resource-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+}
+
+#nc-root .nc-resource-card {
+    background: linear-gradient(180deg, #3a2819 0%, #2a1d13 100%);
+    border: 1px solid #62492c;
+    border-radius: 14px;
+    padding: 12px 8px;
+    text-align: center;
+}
+
+#nc-root .nc-resource-card img {
+    width: 20px;
+    height: 20px;
+    display: block;
+    margin: 0 auto 8px;
+}
+
+#nc-root .nc-resource-value {
+    font-size: 16px;
+    font-weight: 800;
+    color: #fff1d7;
+}
+
+#nc-root .nc-resource-name {
+    margin-top: 4px;
+    font-size: 11px;
+    color: #cbb186;
+}
+
+#nc-root .nc-form-row {
+    display: grid;
+    grid-template-columns: 1fr 120px;
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+#nc-root .nc-form-row label {
+    color: #e9d8b8;
+    font-size: 13px;
+}
+
+#nc-root .nc-form-row input {
+    height: 36px;
+    border-radius: 10px;
+    border: 1px solid #6d5231;
+    background: #17100b;
+    color: #f6e8cb;
+    padding: 0 10px;
+    box-sizing: border-box;
+}
+
+#nc-root .nc-cost-block {
+    margin-top: 14px;
+    padding: 12px;
+    border-radius: 12px;
+    background: rgba(0,0,0,.18);
+    border: 1px solid rgba(255,255,255,.05);
+}
+
+#nc-root .nc-cost-title {
+    color: #fff1d5;
+    font-weight: 700;
+    margin-bottom: 8px;
+}
+
+#nc-root .nc-cost-line {
+    color: #eadcc0;
+    font-size: 13px;
+    margin: 4px 0;
+}
+
+#nc-root .nc-note {
+    margin-top: 14px;
+    color: #bfa680;
+    font-size: 11px;
+}
+
+#nc-root .nc-results-cards {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+#nc-root .nc-result-card {
+    background: linear-gradient(180deg, #3a2819 0%, #2a1d13 100%);
+    border: 1px solid #62492c;
+    border-radius: 14px;
+    padding: 14px;
+    text-align: center;
+}
+
+#nc-root .nc-result-label {
+    color: #cbb186;
+    font-size: 12px;
+}
+
+#nc-root .nc-result-value {
+    margin-top: 6px;
+    font-size: 24px;
+    font-weight: 800;
+    color: #fff;
+}
+
+#nc-root .nc-leftover {
+    margin: 0 22px 18px;
+}
+
+#nc-root .nc-footer {
+    padding: 0 22px 18px;
+    color: #a98d64;
+    font-size: 11px;
+}
+
+@media (max-width: 980px) {
+    .popup_box_content {
+        min-width: unset;
+    }
+
+    #nc-root .nc-grid,
+    #nc-root .nc-results-grid,
+    #nc-root .nc-resource-grid,
+    #nc-root .nc-results-cards {
+        grid-template-columns: 1fr;
+    }
+
+    #nc-root .nc-header,
+    #nc-root .nc-topbar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    #nc-root .nc-form-row {
+        grid-template-columns: 1fr;
+    }
+}
+</style>
+`;
+
+            Dialog.show(DIALOG_ID, html, Dialog.close());
+            $('#popup_box_' + DIALOG_ID).css('width', 'unset');
+
+            $(document).off('click.' + SCRIPT_NS, '#nc-refresh');
+            $(document).on('click.' + SCRIPT_NS, '#nc-refresh', async () => {
+                try { Dialog.close(); } catch (e) {}
+                await this.#loadData();
+                await this.#createUI();
             });
 
-            rows.each(function() {
-                let village = {};
-                header.forEach((unit, i) => {
-                    let val = parseInt(jQuery(this).find(`td:eq(${i+1})`).text().replace('.',''), 10) || 0;
-                    village[unit] = val;
+            $(document).off('click.' + SCRIPT_NS, '#nc-recalc');
+            $(document).on('click.' + SCRIPT_NS, '#nc-recalc', async () => {
+                const nextNobleCoins = parseInt($('#nc-next-noble').val(), 10) || 1;
+                const discount = parseFloat($('#nc-discount').val()) || 0;
+
+                this.detectedData.nextNobleCoins = nextNobleCoins;
+                this.detectedData.discount = discount;
+                this.#saveSettings({ nextNobleCoins, discount });
+
+                await this.#createUI();
+            });
+
+            $(document).off('click.' + SCRIPT_NS, '#nc-copy-summary');
+            $(document).on('click.' + SCRIPT_NS, '#nc-copy-summary', async () => {
+                const nextNobleCoins = parseInt($('#nc-next-noble').val(), 10) || 1;
+                const discount = parseFloat($('#nc-discount').val()) || 0;
+
+                const currentPlan = this.#calculatePlan(
+                    this.totalResources,
+                    this.detectedData.coinCost,
+                    this.detectedData.snobCost,
+                    nextNobleCoins,
+                    discount
+                );
+
+                const summary = this.#buildSummaryText(currentPlan, {
+                    nextNobleCoins,
+                    discount
                 });
-                data.push(village);
+
+                try {
+                    await navigator.clipboard.writeText(summary);
+                    UI.SuccessMessage(t.bbCopied, 1500);
+                } catch (e) {
+                    console.log(summary);
+                }
             });
-            return data;
-        }
 
-        function getTotalHomeTroops(homeTroops) {
-            let t = { spear:0, sword:0, axe:0, archer:0, spy:0, light:0, marcher:0, heavy:0, ram:0, catapult:0, knight:0, snob:0 };
-            homeTroops.forEach(v => {
-                for (let u in t) { if(v[u]) t[u] += v[u]; }
-            });
-            return t;
-        }
+            UI.SuccessMessage(t.success, 500);
 
-        function getTroopsBBCode(total, nuke) {
-            return `[b]Resumo da Conta[/b]\n[b]Nukes Full:[/b] ${nuke.full}\n[b]Nukes Semi:[/b] ${nuke.semi}\n\n[unit]spear[/unit] ${total.spear} | [unit]sword[/unit] ${total.sword} | [unit]heavy[/unit] ${total.heavy}`;
-        }
+            function renderResourceCard(resource, value, label) {
+                const iconMap = {
+                    wood: 'holz',
+                    stone: 'lehm',
+                    iron: 'eisen'
+                };
 
-        function getServerTime() {
-            return jQuery('#serverDate').text() + ' ' + jQuery('#serverTime').text();
+                return `
+                    <div class="nc-resource-card">
+                        <img src="/graphic/${iconMap[resource]}.png" alt="${resource}">
+                        <div class="nc-resource-value">${new Intl.NumberFormat('pt-PT').format(Math.floor(Number(value || 0)))}</div>
+                        <div class="nc-resource-name">${label}</div>
+                    </div>
+                `;
+            }
         }
     }
-);
+
+    window.nobresCalculator = new NobresCalculator();
+    window.nobresCalculator.init();
+})();
