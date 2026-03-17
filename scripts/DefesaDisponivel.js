@@ -171,7 +171,6 @@
 
             var currentPage = 0;
             var lastRunTime = null;
-            var self = this;
 
             while (true) {
                 var scavengingObject = await this.getScavengeMassScreenJson(currentPage, lastRunTime);
@@ -200,8 +199,6 @@
 
                 currentPage++;
             }
-
-            return troopsObj;
         },
 
         getScavengeMassScreenJson: async function (currentPage, lastRunTime) {
@@ -517,9 +514,9 @@
             });
 
             $(document).off('change.' + SCRIPT_NS, '#vtc-group-select');
-            $(document).on('change.' + SCRIPT_NS, '#vtc-group-select', async (ev) => {
+            $(document).on('change.' + SCRIPT_NS, '#vtc-group-select', async function (ev) {
                 var selectedGroup = $(ev.currentTarget).val();
-                await this.changeGroup(selectedGroup);
+                await VTC.changeGroup(selectedGroup);
             });
 
             UI.SuccessMessage(this.t.successMessage, 500);
