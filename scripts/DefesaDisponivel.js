@@ -1,15 +1,14 @@
 // User Input
 if (typeof DEBUG !== 'boolean') DEBUG = false;
 
-// --- NÃO há webhook/token aqui ---
-// Se quiseres enviar para Discord depois, define:
-// var webhookURL = 'https://discord.com/api/webhooks/...';
+// Webhook do Discord
+var webhookURL = 'COLOCA_AQUI_O_TEU_WEBHOOK_DISCORD';
 
 var scriptConfig = {
     scriptData: {
         prefix: 'ownHomeTroopsCount',
         name: 'Own Home Troops Count (Home + Scavenging)',
-        version: 'v8 nuno logic fix',
+        version: 'v9 nuno logic + discord',
         author: 'RedAlert + edit',
         authorUrl: 'https://twscripts.dev/',
         helpLink: 'https://forum.tribalwars.net/index.php?threads/own-home-troops-count.286618/'
@@ -40,6 +39,36 @@ $.getScript(
     `https://twscripts.dev/scripts/twSDK.js?url=${document.currentScript.src}`,
     async function () {
         await twSDK.init(scriptConfig);
+
+        $('<style>').prop('type', 'text/css').html(`
+            #sendToDiscord.btn-twf {
+                display: block;
+                transition: transform 0.2s, box-shadow 0.2s;
+                margin: 20px auto;
+                padding: 8px 16px;
+                background: linear-gradient(to bottom, #f2e5b6 0%, #d6c58a 100%);
+                border: 1px solid #b59e4c;
+                border-radius: 6px;
+                color: #383020;
+                font-weight: bold;
+                font-size: 14px;
+                border-image: linear-gradient(45deg, #d6c58a, #f2e5b6) 1;
+                text-shadow: 0 1px 0 rgba(255,255,255,0.6);
+                cursor: pointer;
+            }
+
+            #sendToDiscord.btn-twf:active {
+                transform: translateY(0);
+                box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            }
+
+            #sendToDiscord.btn-twf:hover {
+                background: linear-gradient(to bottom, #e7d49f 0%, #c9b16f 100%);
+                transform: translateY(-2px);
+                border-image-width: 2;
+                box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+            }
+        `).appendTo('head');
 
         const isValidScreen = twSDK.checkValidLocation('screen');
         const isValidMode = twSDK.checkValidLocation('mode');
@@ -77,6 +106,17 @@ $.getScript(
                 scriptConfig.scriptData.prefix,
                 'ra-own-home-troops-count'
             );
+
+            jQuery('#sendToDiscord').remove();
+            jQuery('.ra-own-home-troops-count').append(`
+                <button id="sendToDiscord" class="btn-twf">
+                    Partilhar defesa disponível no ticket
+                </button>
+            `);
+
+            jQuery('#sendToDiscord').on('click', () => {
+                sendDefensiveTroopsToDiscord(totalCombined);
+            });
 
             setTimeout(() => {
                 if (!game_data.units.includes('archer')) {
@@ -149,45 +189,41 @@ $.getScript(
             };
 
             let currentPage = 0;
-            let lastRunTime = 0;
+            let lastRunTime = null;
 
-            while (true) {
+            do {
                 const scavengingObject = await getScavengeMassScreenJson(currentPage, lastRunTime);
 
-                if (scavengingObject === false) {
-                    break;
+                if (!scavengingObject) {
+                    return troopsObj;
                 }
 
-                if (!scavengingObject.length) {
+                if (scavengingObject.length === 0) {
                     break;
                 }
 
                 lastRunTime = Date.now();
 
                 jQuery.each(scavengingObject, function (_, villageData) {
-                    if (villageData.unit_counts_home) {
-                        jQuery.each(villageData.unit_counts_home, function (key, value) {
-                            if (key !== 'militia' && Object.prototype.hasOwnProperty.call(troopsObj.villagesTroops, key)) {
-                                troopsObj.villagesTroops[key] += parseInt(value, 10) || 0;
-                            }
-                        });
-                    }
+                    jQuery.each(villageData.unit_counts_home || {}, function (key, value) {
+                        if (key !== 'militia' && Object.prototype.hasOwnProperty.call(troopsObj.villagesTroops, key)) {
+                            troopsObj.villagesTroops[key] += parseInt(value, 10) || 0;
+                        }
+                    });
 
-                    if (villageData.options) {
-                        jQuery.each(villageData.options, function (_, option) {
-                            if (option.scavenging_squad !== null && option.scavenging_squad && option.scavenging_squad.unit_counts) {
-                                jQuery.each(option.scavenging_squad.unit_counts, function (key, value) {
-                                    if (key !== 'militia' && Object.prototype.hasOwnProperty.call(troopsObj.scavengingTroops, key)) {
-                                        troopsObj.scavengingTroops[key] += parseInt(value, 10) || 0;
-                                    }
-                                });
-                            }
-                        });
-                    }
+                    jQuery.each(villageData.options || {}, function (_, option) {
+                        if (option.scavenging_squad !== null && option.scavenging_squad && option.scavenging_squad.unit_counts) {
+                            jQuery.each(option.scavenging_squad.unit_counts, function (key, value) {
+                                if (key !== 'militia' && Object.prototype.hasOwnProperty.call(troopsObj.scavengingTroops, key)) {
+                                    troopsObj.scavengingTroops[key] += parseInt(value, 10) || 0;
+                                }
+                            });
+                        }
+                    });
                 });
 
                 currentPage++;
-            }
+            } while (true);
 
             return troopsObj;
         }
@@ -238,7 +274,7 @@ $.getScript(
 
         async function waitMilliseconds(lastRunTime, milliseconds = 0) {
             await new Promise(resolve =>
-                setTimeout(resolve, Math.max(lastRunTime + milliseconds - Date.now(), 0))
+                setTimeout(resolve, Math.max((lastRunTime || 0) + milliseconds - Date.now(), 0))
             );
         }
 
@@ -366,6 +402,79 @@ $.getScript(
             });
 
             return bbCode;
+        }
+
+        function sendDefensiveTroopsToDiscord(totalCombined) {
+            const playerName = game_data.player.name;
+            let currentGroup = (jQuery('strong.group-menu-item').text() || 'todos').trim();
+            currentGroup = currentGroup.replace(/^>/, '').replace(/<$/, '').trim();
+
+            if (
+                typeof webhookURL !== 'string' ||
+                !webhookURL.startsWith('https://discord.com/api/webhooks/')
+            ) {
+                UI.ErrorMessage('Webhook inválido ou não definido.');
+                return;
+            }
+
+            const embedData = {
+                content: `**Tropa Defensiva (Atualizado em: ${getServerTime()})**\n**Jogador:** ${playerName}`,
+                embeds: [
+                    {
+                        title: '**🛡️ TROPA DEFENSIVA**',
+                        fields: [
+                            {
+                                name: '🗂️ **Grupo Atual**',
+                                value: currentGroup || 'todos',
+                                inline: false
+                            },
+                            {
+                                name: '<:lanceiro:1368839513891409972> **Lanceiros**',
+                                value: `${totalCombined.spear || 0}`,
+                                inline: true
+                            },
+                            {
+                                name: '<:espadachim:1368839514746785844> **Espadachins**',
+                                value: `${totalCombined.sword || 0}`,
+                                inline: true
+                            },
+                            {
+                                name: '<:batedor:1368839512423137404> **Batedores**',
+                                value: `${totalCombined.spy || 0}`,
+                                inline: true
+                            },
+                            {
+                                name: '<:pesada:1368839517997498398> **Cavalaria Pesada**',
+                                value: `${totalCombined.heavy || 0}`,
+                                inline: true
+                            },
+                            {
+                                name: '<:catapulta:1368839516441280573> **Catapultas**',
+                                value: `${totalCombined.catapult || 0}`,
+                                inline: true
+                            },
+                            {
+                                name: '<:paladino:1368332901728391319> **Paladinos**',
+                                value: `${totalCombined.knight || 0}`,
+                                inline: true
+                            }
+                        ]
+                    }
+                ]
+            };
+
+            jQuery.ajax({
+                url: webhookURL,
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify(embedData),
+                success: function () {
+                    UI.SuccessMessage('Defesa partilhada com sucesso!', 3000);
+                },
+                error: function () {
+                    UI.ErrorMessage('Erro ao enviar para o Discord.');
+                }
+            });
         }
 
         function getServerTime() {
