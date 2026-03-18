@@ -1,5 +1,5 @@
 (function () {
-    const SCRIPT_NS = 'nobres_final_modern_v8_fix';
+    const SCRIPT_NS = 'nobres_final_modern_v9';
     const DIALOG_ID = 'nobres_final_modern_dialog';
 
     try { $(document).off('.' + SCRIPT_NS); } catch (e) {}
@@ -18,9 +18,7 @@
 
             this.academy = {
                 totalMinted: 0,
-                currentLimit: 0,
-                savedCoins: 0,
-                missingCoins: 0
+                savedCoins: 0
             };
 
             this.ownVillageNames = new Set();
@@ -162,9 +160,7 @@
                     if (id) this.ownVillageIds.add(id);
                 }
 
-                let wood = 0;
-                let stone = 0;
-                let iron = 0;
+                let wood = 0, stone = 0, iron = 0;
 
                 const resourceCell = $row.find('td').filter(function () {
                     return $(this).find('.wood, .stone, .iron').length > 0;
@@ -229,27 +225,27 @@
             return res;
         }
 
-        parseOwnTraderTable(html) {
+        parseOutgoingTable(html) {
             const dom = $.parseHTML(html);
             const total = { wood: 0, stone: 0, iron: 0 };
 
             $(dom).find('#trades_table tbody tr').each((_, tr) => {
                 const $tr = $(tr);
                 const $tds = $tr.find('td');
-                if ($tds.length < 8) return;
+                if ($tds.length < 9) return;
 
                 const arrowSrc = $tds.eq(1).find('img').attr('src') || '';
-                const originLink = $tds.eq(2).find('a[href*="screen=info_village"]');
-                const targetLink = $tds.eq(3).find('a[href*="screen=info_village"]');
-                const resCell = $tds.eq($tds.length - 1);
-
                 if (!/outgoing\.webp/i.test(arrowSrc)) return;
-                if (!originLink.length || !targetLink.length) return;
-                if (!resCell.length || resCell.hasClass('hidden')) return;
+
+                const originLink = $tds.eq(2).find('a[href*="screen=info_village"]');
+                const targetLink = $tds.eq(4).find('a[href*="screen=info_village"]');
+                const resCell = $tds.eq(9);
+
+                if (!originLink.length || !targetLink.length || !resCell.length) return;
 
                 const originName = originLink.text().replace(/\s+/g, ' ').trim();
-                const targetName = targetLink.text().replace(/\s+/g, ' ').trim();
                 const originHref = originLink.attr('href') || '';
+                const targetName = targetLink.text().replace(/\s+/g, ' ').trim();
                 const targetHref = targetLink.attr('href') || '';
 
                 const originOwn = this.isOwnVillageRef(originName, originHref);
@@ -266,7 +262,7 @@
             return total;
         }
 
-        parseIncomingTraderTable(html) {
+        parseAllTableIncoming(html) {
             const dom = $.parseHTML(html);
             const total = { wood: 0, stone: 0, iron: 0 };
             const myName = String(game_data.player.name || '').trim().toLowerCase();
@@ -274,22 +270,21 @@
             $(dom).find('#trades_table tbody tr').each((_, tr) => {
                 const $tr = $(tr);
                 const $tds = $tr.find('td');
-                if ($tds.length < 8) return;
+                if ($tds.length < 9) return;
 
                 const arrowSrc = $tds.eq(1).find('img').attr('src') || '';
-                const senderPlayer = $tds.eq(2).text().replace(/\s+/g, ' ').trim().toLowerCase();
-                const targetLink = $tds.eq(4).find('a[href*="screen=info_village"]');
-                const resCell = $tds.eq($tds.length - 1);
-
                 if (!/incoming\.webp/i.test(arrowSrc)) return;
-                if (!targetLink.length) return;
-                if (!resCell.length || resCell.hasClass('hidden')) return;
+
+                const senderPlayer = $tds.eq(2).text().replace(/\s+/g, ' ').trim().toLowerCase();
+                const targetLink = $tds.eq(5).find('a[href*="screen=info_village"]');
+                const resCell = $tds.eq(9);
+
+                if (!targetLink.length || !resCell.length) return;
 
                 const targetName = targetLink.text().replace(/\s+/g, ' ').trim();
                 const targetHref = targetLink.attr('href') || '';
-                const targetOwn = this.isOwnVillageRef(targetName, targetHref);
 
-                if (!targetOwn) return;
+                if (!this.isOwnVillageRef(targetName, targetHref)) return;
                 if (senderPlayer === myName) return;
 
                 const res = this.extractResourcesByIcons(resCell);
@@ -302,11 +297,11 @@
         }
 
         async getTransitResources() {
-            const ownHtml = await this.fetchPage(this.buildUrl('overview_villages', 'trader', { type: 'own' }));
-            const incHtml = await this.fetchPage(this.buildUrl('overview_villages', 'trader', { type: 'inc' }));
+            const outHtml = await this.fetchPage(this.buildUrl('overview_villages', 'trader', { type: 'out' }));
+            const allHtml = await this.fetchPage(this.buildUrl('overview_villages', 'trader', { type: 'all' }));
 
-            this.resources.ownTransit = this.parseOwnTraderTable(ownHtml);
-            this.resources.externalIncoming = this.parseIncomingTraderTable(incHtml);
+            this.resources.ownTransit = this.parseOutgoingTable(outHtml);
+            this.resources.externalIncoming = this.parseAllTableIncoming(allHtml);
         }
 
         async getAcademyData() {
@@ -317,34 +312,17 @@
                 text.match(/Moedas de ouro\s*Total:\s*(\d+)/i) ||
                 text.match(/Total:\s*(\d+)/i);
 
-            const currentLimitMatch =
-                text.match(/Limite de nobres atual:\s*(\d+)/i) ||
-                text.match(/Limite de nobres:\s*(\d+)/i);
-
-            const missingMatch =
-                text.match(/ainda faltam:\s*(\d+)\s*moedas de ouro/i) ||
-                text.match(/faltam:\s*(\d+)\s*moedas de ouro/i);
-
             const savedMatch =
                 text.match(/Já poupado para o limite de nobres\s*\d+:\s*(\d+)\s*moedas de ouro/i) ||
                 text.match(/Já poupado.*?:\s*(\d+)\s*moedas de ouro/i);
 
             this.academy.totalMinted = totalMatch ? parseInt(totalMatch[1], 10) : 0;
-            this.academy.currentLimit = currentLimitMatch ? parseInt(currentLimitMatch[1], 10) : 0;
 
-            const savedFromTri = Math.max(0, this.academy.totalMinted - this.tri(this.academy.currentLimit));
-            const savedFromText = savedMatch ? parseInt(savedMatch[1], 10) : savedFromTri;
+            let currentLimit = 0;
+            while (this.tri(currentLimit + 1) <= this.academy.totalMinted) currentLimit++;
 
-            this.academy.savedCoins = savedFromText;
-            this.academy.missingCoins = missingMatch
-                ? parseInt(missingMatch[1], 10)
-                : Math.max(0, (this.academy.currentLimit + 1) - this.academy.savedCoins);
-
-            if (this.academy.savedCoins > (this.academy.currentLimit + 1)) {
-                this.academy.savedCoins = savedFromTri;
-            }
-
-            this.academy.missingCoins = Math.max(0, (this.academy.currentLimit + 1) - this.academy.savedCoins);
+            const savedFromTri = Math.max(0, this.academy.totalMinted - this.tri(currentLimit));
+            this.academy.savedCoins = savedMatch ? parseInt(savedMatch[1], 10) : savedFromTri;
         }
 
         getCurrentGroupName() {
@@ -378,13 +356,11 @@
         }
 
         getSavedCoins() {
-            const raw = $('#nc_saved').val();
-            return Math.max(0, this.parseNumber(raw));
+            return Math.max(0, this.parseNumber($('#nc_saved').val()));
         }
 
         getMintedCoins() {
-            const raw = $('#nc_minted').val();
-            return Math.max(0, this.parseNumber(raw));
+            return Math.max(0, this.parseNumber($('#nc_minted').val()));
         }
 
         getCurrentLimit() {
@@ -447,7 +423,7 @@
                 }
             }
 
-            return { nobles, remaining: current };
+            return { nobles };
         }
 
         calc() {
@@ -466,14 +442,17 @@
             const missingCoins = Math.max(0, (currentLimit + 1) - savedCoins);
 
             const coinsPossible = this.calcCoinsFromResources(usableTotal, coinCost);
-            const max = this.calcMaxNoblesFromResources(usableTotal, currentLimit, savedCoins, coinCost);
+            const noblesPossible = this.calcMaxNoblesFromResources(
+                usableTotal,
+                currentLimit,
+                savedCoins,
+                coinCost
+            ).nobles;
 
             return {
                 villages,
                 ownTransit,
                 externalIncoming,
-                totalOwn,
-                totalWithIncoming,
                 usableTotal,
                 mintedCoins,
                 currentLimit,
@@ -481,7 +460,7 @@
                 coinCost,
                 missingCoins,
                 coinsPossible,
-                noblesPossible: max.nobles
+                noblesPossible
             };
         }
 
@@ -615,292 +594,42 @@
 
 <style>
 #popup_box_${DIALOG_ID} { width: unset !important; }
-#popup_box_${DIALOG_ID} .popup_box_content {
-    min-width: 960px;
-    background: transparent !important;
-}
-.mds #popup_box_${DIALOG_ID} .popup_box_content { min-width: unset !important; }
-
-#nc-root {
-    color: #f3e9d2;
-    font-family: Arial, sans-serif;
-}
-
-#nc-root .nc-shell {
-    background: linear-gradient(180deg, rgba(34,24,17,.96) 0%, rgba(23,16,11,.98) 100%);
-    border: 1px solid #6d5231;
-    border-radius: 18px;
-    box-shadow: 0 18px 45px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.04);
-    overflow: hidden;
-}
-
-#nc-root .nc-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: 16px;
-    padding: 20px 22px;
-    background: linear-gradient(135deg, rgba(88,57,29,.95) 0%, rgba(59,37,20,.97) 100%);
-    border-bottom: 1px solid #7c5b36;
-}
-
-#nc-root .nc-kicker {
-    color: #d6b98a;
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: .12em;
-    margin-bottom: 6px;
-}
-
-#nc-root h3 {
-    margin: 0;
-    font-size: 24px;
-    color: #fff3da;
-}
-
-#nc-root .nc-sub {
-    margin-top: 6px;
-    color: #d9c4a0;
-    font-size: 12px;
-}
-
-#nc-root .nc-stamp {
-    background: rgba(0,0,0,.18);
-    border: 1px solid rgba(255,255,255,.08);
-    color: #f6e7c9;
-    padding: 10px 12px;
-    border-radius: 12px;
-    font-weight: 700;
-    font-size: 12px;
-    white-space: nowrap;
-}
-
-#nc-root .nc-topbar {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 14px;
-    flex-wrap: wrap;
-    padding: 16px 22px;
-    background: rgba(0,0,0,.18);
-    border-bottom: 1px solid rgba(255,255,255,.05);
-}
-
-#nc-root .nc-meta {
-    display: flex;
-    gap: 10px;
-    flex-wrap: wrap;
-}
-
-#nc-root .nc-pill {
-    background: linear-gradient(180deg, #3a2819 0%, #2b1d12 100%);
-    border: 1px solid #6b4f31;
-    border-radius: 999px;
-    padding: 8px 12px;
-    color: #f2e1c0;
-    display: flex;
-    gap: 8px;
-    align-items: center;
-}
-
-#nc-root .nc-pill span {
-    color: #c9ae80;
-    font-size: 11px;
-    text-transform: uppercase;
-}
-
-#nc-root .nc-actions {
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-}
-
-#nc-root .nc-btn {
-    height: 38px;
-    padding: 0 14px;
-    border-radius: 10px;
-    border: 1px solid #7d5b33;
-    cursor: pointer;
-    font-weight: 700;
-    transition: .15s ease;
-}
-
-#nc-root .nc-btn:hover {
-    transform: translateY(-1px);
-    filter: brightness(1.04);
-}
-
-#nc-root .nc-btn-secondary {
-    background: linear-gradient(180deg, #4d3723 0%, #372517 100%);
-    color: #f5e6c8;
-}
-
-#nc-root .nc-btn-primary {
-    background: linear-gradient(180deg, #b8863b 0%, #8d6228 100%);
-    color: #fff8ea;
-    border-color: #c89b53;
-}
-
-#nc-root .nc-grid {
-    display: grid;
-    grid-template-columns: 1.15fr .85fr;
-    gap: 16px;
-    padding: 18px 22px;
-}
-
-#nc-root .nc-panel {
-    background: linear-gradient(180deg, #2d1f14 0%, #21160e 100%);
-    border: 1px solid #644a2d;
-    border-radius: 16px;
-    padding: 16px;
-}
-
-#nc-root .nc-panel-head {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 12px;
-    margin-bottom: 12px;
-}
-
-#nc-root .nc-total-head {
-    margin-top: 16px;
-}
-
-#nc-root .nc-panel-head h4 {
-    margin: 0;
-    color: #fff1d5;
-    font-size: 16px;
-}
-
-#nc-root .nc-mini-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 10px;
-}
-
-#nc-root .nc-stat-card,
-#nc-root .nc-box,
-#nc-root .nc-big-total {
-    background: linear-gradient(180deg, #3a2819 0%, #2a1d13 100%);
-    border: 1px solid #62492c;
-    border-radius: 14px;
-    padding: 12px;
-}
-
-#nc-root .nc-stat-title,
-#nc-root .nc-box-title {
-    color: #f0d0a4;
-    font-size: 13px;
-    font-weight: 700;
-    margin-bottom: 8px;
-}
-
-#nc-root .nc-line {
-    display: flex;
-    justify-content: space-between;
-    gap: 10px;
-    font-size: 13px;
-    padding: 4px 0;
-    color: #e7d2b0;
-}
-
-#nc-root .nc-line b {
-    color: #fff1d7;
-    text-align: right;
-    word-break: break-word;
-}
-
-#nc-root .nc-res-label {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-}
-
-#nc-root .nc-res-icon {
-    width: 16px;
-    height: 16px;
-    object-fit: contain;
-    vertical-align: middle;
-    flex: 0 0 16px;
-}
-
-#nc-root .nc-check {
-    margin-top: 14px;
-    color: #e7d2b0;
-}
-
-#nc-root .nc-form {
-    display: grid;
-    gap: 10px;
-    margin-bottom: 12px;
-}
-
-#nc-root .nc-field label {
-    display: block;
-    margin-bottom: 5px;
-    font-size: 13px;
-    color: #e0bf93;
-}
-
-#nc-root .nc-field input {
-    width: 100%;
-    box-sizing: border-box;
-    background: #17100b;
-    border: 1px solid #644a2d;
-    border-radius: 10px;
-    color: #f1e2c6;
-    padding: 10px 12px;
-    outline: none;
-}
-
-#nc-root .nc-results {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 16px;
-    padding: 0 22px 18px;
-}
-
-#nc-root .nc-result-card {
-    background: linear-gradient(180deg, #2d1f14 0%, #21160e 100%);
-    border: 1px solid #644a2d;
-    border-radius: 16px;
-    padding: 18px;
-    text-align: center;
-}
-
-#nc-root .nc-result-label {
-    color: #d8bf97;
-    font-size: 13px;
-    margin-bottom: 10px;
-}
-
-#nc-root .nc-result-value {
-    color: #fff4dc;
-    font-size: 42px;
-    font-weight: 800;
-    line-height: 1;
-}
-
-#nc-root .nc-footer {
-    padding: 0 22px 18px;
-    color: #a98d64;
-    font-size: 11px;
-}
-
-@media (max-width: 980px) {
-    #popup_box_${DIALOG_ID} .popup_box_content { min-width: unset; }
-    #nc-root .nc-grid,
-    #nc-root .nc-results,
-    #nc-root .nc-mini-grid {
-        grid-template-columns: 1fr;
-    }
-    #nc-root .nc-header,
-    #nc-root .nc-topbar {
-        flex-direction: column;
-        align-items: stretch;
-    }
-}
+#popup_box_${DIALOG_ID} .popup_box_content { min-width: 960px; background: transparent !important; }
+#nc-root { color: #f3e9d2; font-family: Arial, sans-serif; }
+#nc-root .nc-shell { background: linear-gradient(180deg, rgba(34,24,17,.96) 0%, rgba(23,16,11,.98) 100%); border: 1px solid #6d5231; border-radius: 18px; overflow: hidden; }
+#nc-root .nc-header { display: flex; justify-content: space-between; gap: 16px; padding: 20px 22px; background: linear-gradient(135deg, rgba(88,57,29,.95) 0%, rgba(59,37,20,.97) 100%); border-bottom: 1px solid #7c5b36; }
+#nc-root .nc-kicker { color: #d6b98a; font-size: 11px; text-transform: uppercase; letter-spacing: .12em; margin-bottom: 6px; }
+#nc-root h3 { margin: 0; font-size: 24px; color: #fff3da; }
+#nc-root .nc-sub { margin-top: 6px; color: #d9c4a0; font-size: 12px; }
+#nc-root .nc-stamp { background: rgba(0,0,0,.18); border: 1px solid rgba(255,255,255,.08); color: #f6e7c9; padding: 10px 12px; border-radius: 12px; font-weight: 700; font-size: 12px; white-space: nowrap; }
+#nc-root .nc-topbar { display: flex; justify-content: space-between; align-items: center; gap: 14px; flex-wrap: wrap; padding: 16px 22px; background: rgba(0,0,0,.18); border-bottom: 1px solid rgba(255,255,255,.05); }
+#nc-root .nc-meta { display: flex; gap: 10px; flex-wrap: wrap; }
+#nc-root .nc-pill { background: linear-gradient(180deg, #3a2819 0%, #2b1d12 100%); border: 1px solid #6b4f31; border-radius: 999px; padding: 8px 12px; color: #f2e1c0; display: flex; gap: 8px; align-items: center; }
+#nc-root .nc-pill span { color: #c9ae80; font-size: 11px; text-transform: uppercase; }
+#nc-root .nc-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+#nc-root .nc-btn { height: 38px; padding: 0 14px; border-radius: 10px; border: 1px solid #7d5b33; cursor: pointer; font-weight: 700; }
+#nc-root .nc-btn-secondary { background: linear-gradient(180deg, #4d3723 0%, #372517 100%); color: #f5e6c8; }
+#nc-root .nc-btn-primary { background: linear-gradient(180deg, #b8863b 0%, #8d6228 100%); color: #fff8ea; border-color: #c89b53; }
+#nc-root .nc-grid { display: grid; grid-template-columns: 1.15fr .85fr; gap: 16px; padding: 18px 22px; }
+#nc-root .nc-panel { background: linear-gradient(180deg, #2d1f14 0%, #21160e 100%); border: 1px solid #644a2d; border-radius: 16px; padding: 16px; }
+#nc-root .nc-panel-head { margin-bottom: 12px; }
+#nc-root .nc-panel-head h4 { margin: 0; color: #fff1d5; font-size: 16px; }
+#nc-root .nc-mini-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+#nc-root .nc-stat-card, #nc-root .nc-box, #nc-root .nc-big-total { background: linear-gradient(180deg, #3a2819 0%, #2a1d13 100%); border: 1px solid #62492c; border-radius: 14px; padding: 12px; }
+#nc-root .nc-stat-title, #nc-root .nc-box-title { color: #f0d0a4; font-size: 13px; font-weight: 700; margin-bottom: 8px; }
+#nc-root .nc-line { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; padding: 4px 0; color: #e7d2b0; }
+#nc-root .nc-line b { color: #fff1d7; text-align: right; }
+#nc-root .nc-res-label { display: inline-flex; align-items: center; gap: 6px; }
+#nc-root .nc-res-icon { width: 16px; height: 16px; object-fit: contain; }
+#nc-root .nc-check { margin-top: 14px; color: #e7d2b0; }
+#nc-root .nc-form { display: grid; gap: 10px; margin-bottom: 12px; }
+#nc-root .nc-field label { display: block; margin-bottom: 5px; font-size: 13px; color: #e0bf93; }
+#nc-root .nc-field input { width: 100%; box-sizing: border-box; background: #17100b; border: 1px solid #644a2d; border-radius: 10px; color: #f1e2c6; padding: 10px 12px; outline: none; }
+#nc-root .nc-results { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; padding: 0 22px 18px; }
+#nc-root .nc-result-card { background: linear-gradient(180deg, #2d1f14 0%, #21160e 100%); border: 1px solid #644a2d; border-radius: 16px; padding: 18px; text-align: center; }
+#nc-root .nc-result-label { color: #d8bf97; font-size: 13px; margin-bottom: 10px; }
+#nc-root .nc-result-value { color: #fff4dc; font-size: 42px; font-weight: 800; line-height: 1; }
+#nc-root .nc-footer { padding: 0 22px 18px; color: #a98d64; font-size: 11px; }
 </style>
 `;
             Dialog.show(DIALOG_ID, html, Dialog.close());
@@ -923,26 +652,13 @@
             $('#nc_result_missing').text(this.format(c.missingCoins));
 
             $('#nc_usable_detail').html(this.resourceRows(c.usableTotal));
-
-            const noExternal =
-                (c.externalIncoming.wood || 0) === 0 &&
-                (c.externalIncoming.stone || 0) === 0 &&
-                (c.externalIncoming.iron || 0) === 0;
-
-            if (noExternal) {
-                $('#nc_include_incoming').closest('.nc-check').hide();
-            } else {
-                $('#nc_include_incoming').closest('.nc-check').show();
-            }
         }
 
         buildSummaryText() {
             const c = this.calc();
-
             return [
                 '[b]Calculadora de Nobres[/b]',
                 `Moedas já cunhadas: ${this.format(c.mintedCoins)}`,
-                `Limite atual de nobres: ${this.format(c.currentLimit)}`,
                 `Moedas poupadas p/ próximo: ${this.format(c.savedCoins)}`,
                 `Desconto moeda: ${this.getMintDiscount()}%`,
                 `Moedas possíveis: ${this.format(c.coinsPossible)}`,
