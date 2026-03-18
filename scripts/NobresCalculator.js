@@ -1,5 +1,5 @@
 (function () {
-    const SCRIPT_NS = 'nobres_final_modern_v9';
+    const SCRIPT_NS = 'nobres_final_modern_v10';
     const DIALOG_ID = 'nobres_final_modern_dialog';
 
     try { $(document).off('.' + SCRIPT_NS); } catch (e) {}
@@ -111,8 +111,8 @@
         }
 
         extractVillageIdFromHref(href) {
-            const m = String(href || '').match(/[?&]id=(\d+)/);
-            return m ? String(m[1]) : '';
+            const m = String(href || '').match(/[?&]id=(\d+)/i);
+            return m ? String(m[1]).trim() : '';
         }
 
         isOwnVillageRef(name, href) {
@@ -120,9 +120,9 @@
             const coords = this.extractCoords(name);
             const id = this.extractVillageIdFromHref(href);
 
-            if (id && this.ownVillageIds.has(id)) return true;
-            if (coords && this.ownVillageCoords.has(coords)) return true;
-            if (norm && this.ownVillageNames.has(norm)) return true;
+            if (id && this.ownVillageIds.has(String(id))) return true;
+            if (coords && this.ownVillageCoords.has(String(coords))) return true;
+            if (norm && this.ownVillageNames.has(String(norm))) return true;
 
             return false;
         }
@@ -196,30 +196,41 @@
         extractResourcesByIcons($cell) {
             const res = { wood: 0, stone: 0, iron: 0 };
 
-            $cell.find('span.icon.header').each((_, el) => {
-                const $icon = $(el);
-                const amount = this.parseNumber($icon.parent().text());
+            const nums = (($cell.text() || '').match(/\d[\d.]*/g) || []).map(n => this.parseNumber(n));
+            if (!nums.length) return res;
 
-                if ($icon.hasClass('wood')) res.wood += amount;
-                if ($icon.hasClass('stone')) res.stone += amount;
-                if ($icon.hasClass('iron')) res.iron += amount;
+            const types = [];
+            $cell.find('img').each((_, img) => {
+                const src = String($(img).attr('src') || '').toLowerCase();
+                if (/holz|wood|madeira/.test(src)) types.push('wood');
+                else if (/lehm|stone|barro|argila/.test(src)) types.push('stone');
+                else if (/eisen|iron|ferro/.test(src)) types.push('iron');
             });
 
-            if (!res.wood && !res.stone && !res.iron) {
-                const html = $cell.html() || '';
-                const txt = $cell.text().replace(/\s+/g, ' ').trim();
-                const nums = txt.match(/\d[\d.\s]*/g) || [];
+            if (types.length) {
+                types.forEach((type, i) => {
+                    res[type] += nums[i] || 0;
+                });
+                return res;
+            }
 
-                if (nums.length === 1) {
-                    const value = this.parseNumber(nums[0]);
-                    if (/header wood|class="wood"|holz|madeira/i.test(html)) res.wood = value;
-                    if (/header stone|class="stone"|lehm|argila|barro/i.test(html)) res.stone = value;
-                    if (/header iron|class="iron"|eisen|ferro/i.test(html)) res.iron = value;
-                } else if (nums.length >= 3) {
-                    res.wood = this.parseNumber(nums[0]);
-                    res.stone = this.parseNumber(nums[1]);
-                    res.iron = this.parseNumber(nums[2]);
-                }
+            const html = String($cell.html() || '').toLowerCase();
+            const htmlTypes = [];
+            if (/holz|wood|madeira/.test(html)) htmlTypes.push('wood');
+            if (/lehm|stone|barro|argila/.test(html)) htmlTypes.push('stone');
+            if (/eisen|iron|ferro/.test(html)) htmlTypes.push('iron');
+
+            if (htmlTypes.length) {
+                htmlTypes.forEach((type, i) => {
+                    res[type] += nums[i] || 0;
+                });
+                return res;
+            }
+
+            if (nums.length >= 3) {
+                res.wood = nums[0];
+                res.stone = nums[1];
+                res.iron = nums[2];
             }
 
             return res;
@@ -232,13 +243,13 @@
             $(dom).find('#trades_table tbody tr').each((_, tr) => {
                 const $tr = $(tr);
                 const $tds = $tr.find('td');
-                if ($tds.length < 9) return;
+                if ($tds.length < 10) return;
 
                 const arrowSrc = $tds.eq(1).find('img').attr('src') || '';
-                if (!/outgoing\.webp/i.test(arrowSrc)) return;
+                if (!/outgoing/i.test(arrowSrc)) return;
 
-                const originLink = $tds.eq(2).find('a[href*="screen=info_village"]');
-                const targetLink = $tds.eq(4).find('a[href*="screen=info_village"]');
+                const originLink = $tds.eq(2).find('a[href*="screen=info_village"]').first();
+                const targetLink = $tds.eq(4).find('a[href*="screen=info_village"]').first();
                 const resCell = $tds.eq(9);
 
                 if (!originLink.length || !targetLink.length || !resCell.length) return;
@@ -273,11 +284,11 @@
                 if ($tds.length < 9) return;
 
                 const arrowSrc = $tds.eq(1).find('img').attr('src') || '';
-                if (!/incoming\.webp/i.test(arrowSrc)) return;
+                if (!/incoming/i.test(arrowSrc)) return;
 
                 const senderPlayer = $tds.eq(2).text().replace(/\s+/g, ' ').trim().toLowerCase();
-                const targetLink = $tds.eq(5).find('a[href*="screen=info_village"]');
-                const resCell = $tds.eq(9);
+                const targetLink = $tds.eq(4).find('a[href*="screen=info_village"]').first();
+                const resCell = $tds.eq(8);
 
                 if (!targetLink.length || !resCell.length) return;
 
@@ -298,10 +309,10 @@
 
         async getTransitResources() {
             const outHtml = await this.fetchPage(this.buildUrl('overview_villages', 'trader', { type: 'out' }));
-            const allHtml = await this.fetchPage(this.buildUrl('overview_villages', 'trader', { type: 'all' }));
+            const incHtml = await this.fetchPage(this.buildUrl('overview_villages', 'trader', { type: 'inc' }));
 
             this.resources.ownTransit = this.parseOutgoingTable(outHtml);
-            this.resources.externalIncoming = this.parseAllTableIncoming(allHtml);
+            this.resources.externalIncoming = this.parseAllTableIncoming(incHtml);
         }
 
         async getAcademyData() {
@@ -696,5 +707,6 @@
         }
     }
 
+    window.NobresCalculator = NobresCalculator;
     new NobresCalculator().init();
 })();
