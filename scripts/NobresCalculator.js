@@ -1,5 +1,5 @@
 (function () {
-    const SCRIPT_NS = 'nobres_final_modern_v11';
+    const SCRIPT_NS = 'nobres_final_modern_v12';
     const DIALOG_ID = 'nobres_final_modern_dialog';
 
     try { $(document).off('.' + SCRIPT_NS); } catch (e) {}
@@ -144,24 +144,42 @@
 
             const pages = [
                 await this.fetchPage(this.buildUrl('overview_villages', 'combined')),
-                await this.fetchPage(this.buildUrl('overview_villages', 'prod')),
-                await this.fetchPage(this.buildUrl('overview_villages', 'trader', { type: 'inc' })),
-                await this.fetchPage(this.buildUrl('overview_villages', 'trader', { type: 'out' }))
+                await this.fetchPage(this.buildUrl('overview_villages', 'prod'))
             ];
 
             pages.forEach(html => {
                 if (!html) return;
                 const dom = $.parseHTML(html);
 
-                $(dom).find('a').each((_, a) => {
-                    const $a = $(a);
-                    const text = $a.text().replace(/\s+/g, ' ').trim();
-                    const href = $a.attr('href') || '';
+                const rows = $(dom).find('#combined_table tbody tr, #production_table tbody tr');
 
-                    if (!/\(\d+\|\d+\)/.test(text)) return;
+                rows.each((_, row) => {
+                    const $row = $(row);
 
-                    const norm = this.normalizeVillageName(text);
-                    const coords = this.extractCoords(text);
+                    let villageLink = $row.find('a[href*="screen=info_village"], a[href*="info_village"]').first();
+
+                    if (!villageLink.length) {
+                        villageLink = $row.find('a').filter(function () {
+                            const txt = $(this).text().replace(/\s+/g, ' ').trim();
+                            return /\(\d+\|\d+\)/.test(txt);
+                        }).first();
+                    }
+
+                    let rawName = '';
+                    let href = '';
+
+                    if (villageLink.length) {
+                        rawName = villageLink.text().replace(/\s+/g, ' ').trim();
+                        href = villageLink.attr('href') || '';
+                    } else {
+                        const rowText = $row.text().replace(/\s+/g, ' ').trim();
+                        const m = rowText.match(/[A-Za-z0-9À-ÿ_\-\s]*\(\d+\|\d+\)\s*K\d+/);
+                        rawName = m ? m[0].trim() : '';
+                        href = '';
+                    }
+
+                    const norm = this.normalizeVillageName(rawName);
+                    const coords = this.extractCoords(rawName);
                     const id = this.extractVillageIdFromHref(href);
 
                     if (norm) this.ownVillageNames.add(norm);
@@ -329,12 +347,50 @@
             return total;
         }
 
-        async getTransitResources() {
-            const outHtml = await this.fetchPage(this.buildUrl('overview_villages', 'trader', { type: 'out' }));
-            const incHtml = await this.fetchPage(this.buildUrl('overview_villages', 'trader', { type: 'inc' }));
+        async fetchAllTraderPages(type) {
+            const pages = [];
+            let page = 0;
 
-            this.resources.ownTransit = this.parseOutgoingTable(outHtml);
-            this.resources.externalIncoming = this.parseAllTableIncoming(incHtml);
+            while (true) {
+                const html = await this.fetchPage(
+                    this.buildUrl('overview_villages', 'trader', { type: type, page: page })
+                );
+
+                if (!html) break;
+                pages.push(html);
+
+                const dom = $.parseHTML(html);
+                const $rows = $(dom).find('#trades_table tbody tr').filter(function () {
+                    return $(this).find('td').length > 0;
+                });
+
+                if (!$rows.length) break;
+
+                const nextPage = page + 1;
+                const hasNext =
+                    $(dom).find('a[href*="page=' + nextPage + '"]').length > 0 ||
+                    $(dom).find('.paged-nav-item a[href*="page=' + nextPage + '"]').length > 0 ||
+                    $(dom).find('.paged-nav-item-current').next('a').length > 0;
+
+                if (!hasNext) break;
+                page++;
+            }
+
+            return pages;
+        }
+
+        async getTransitResources() {
+            const outPages = await this.fetchAllTraderPages('out');
+            const incPages = await this.fetchAllTraderPages('inc');
+
+            const ownTotal = { wood: 0, stone: 0, iron: 0 };
+            const incTotal = { wood: 0, stone: 0, iron: 0 };
+
+            outPages.forEach(html => this.addRes(ownTotal, this.parseOutgoingTable(html)));
+            incPages.forEach(html => this.addRes(incTotal, this.parseAllTableIncoming(html)));
+
+            this.resources.ownTransit = ownTotal;
+            this.resources.externalIncoming = incTotal;
         }
 
         async getAcademyData() {
