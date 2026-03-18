@@ -1,5 +1,5 @@
 (function () {
-    const SCRIPT_NS = 'nobres_final_modern_v10';
+    const SCRIPT_NS = 'nobres_final_modern_v11';
     const DIALOG_ID = 'nobres_final_modern_dialog';
 
     try { $(document).off('.' + SCRIPT_NS); } catch (e) {}
@@ -111,7 +111,11 @@
         }
 
         extractVillageIdFromHref(href) {
-            const m = String(href || '').match(/[?&]id=(\d+)/i);
+            const str = String(href || '');
+            const m =
+                str.match(/[?&]id=(\d+)/i) ||
+                str.match(/[?&]village=(\d+)/i);
+
             return m ? String(m[1]).trim() : '';
         }
 
@@ -120,8 +124,8 @@
             const coords = this.extractCoords(name);
             const id = this.extractVillageIdFromHref(href);
 
-            if (id && this.ownVillageIds.has(String(id))) return true;
             if (coords && this.ownVillageCoords.has(String(coords))) return true;
+            if (id && this.ownVillageIds.has(String(id))) return true;
             if (norm && this.ownVillageNames.has(String(norm))) return true;
 
             return false;
@@ -133,32 +137,50 @@
             await this.getAcademyData();
         }
 
-        async getVillageResources() {
-            const html = await this.fetchPage(this.buildUrl('overview_villages', 'prod'));
-            const dom = $.parseHTML(html);
-            const rows = $(dom).find('#production_table tbody tr');
-            const total = { wood: 0, stone: 0, iron: 0 };
-
+        async loadOwnVillagesFromOverview() {
             this.ownVillageNames = new Set();
             this.ownVillageCoords = new Set();
             this.ownVillageIds = new Set();
 
-            rows.each((_, row) => {
-                const $row = $(row);
+            const pages = [
+                await this.fetchPage(this.buildUrl('overview_villages', 'combined')),
+                await this.fetchPage(this.buildUrl('overview_villages', 'prod')),
+                await this.fetchPage(this.buildUrl('overview_villages', 'trader', { type: 'inc' })),
+                await this.fetchPage(this.buildUrl('overview_villages', 'trader', { type: 'out' }))
+            ];
 
-                const villageLink = $row.find('a[href*="screen=info_village"]').first();
-                if (villageLink.length) {
-                    const rawName = villageLink.text().replace(/\s+/g, ' ').trim();
-                    const href = villageLink.attr('href') || '';
+            pages.forEach(html => {
+                if (!html) return;
+                const dom = $.parseHTML(html);
 
-                    const norm = this.normalizeVillageName(rawName);
-                    const coords = this.extractCoords(rawName);
+                $(dom).find('a').each((_, a) => {
+                    const $a = $(a);
+                    const text = $a.text().replace(/\s+/g, ' ').trim();
+                    const href = $a.attr('href') || '';
+
+                    if (!/\(\d+\|\d+\)/.test(text)) return;
+
+                    const norm = this.normalizeVillageName(text);
+                    const coords = this.extractCoords(text);
                     const id = this.extractVillageIdFromHref(href);
 
                     if (norm) this.ownVillageNames.add(norm);
                     if (coords) this.ownVillageCoords.add(coords);
                     if (id) this.ownVillageIds.add(id);
-                }
+                });
+            });
+        }
+
+        async getVillageResources() {
+            await this.loadOwnVillagesFromOverview();
+
+            const html = await this.fetchPage(this.buildUrl('overview_villages', 'prod'));
+            const dom = $.parseHTML(html);
+            const rows = $(dom).find('#production_table tbody tr, #combined_table tbody tr');
+            const total = { wood: 0, stone: 0, iron: 0 };
+
+            rows.each((_, row) => {
+                const $row = $(row);
 
                 let wood = 0, stone = 0, iron = 0;
 
