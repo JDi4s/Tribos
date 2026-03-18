@@ -1,5 +1,5 @@
 (function () {
-    const SCRIPT_NS = 'nobres_final_modern_v6';
+    const SCRIPT_NS = 'nobres_final_modern_v7';
     const DIALOG_ID = 'nobres_final_modern_dialog';
 
     try { $(document).off('.' + SCRIPT_NS); } catch (e) {}
@@ -18,8 +18,9 @@
 
             this.academy = {
                 totalMinted: 0,
+                currentLimit: 0,
                 savedCoins: 0,
-                missingCoins: 25
+                missingCoins: 0
             };
 
             this.icons = {
@@ -77,6 +78,11 @@
 
         format(n) {
             return new Intl.NumberFormat('pt-PT').format(Number(n || 0));
+        }
+
+        tri(n) {
+            n = Math.max(0, Number(n || 0));
+            return (n * (n + 1)) / 2;
         }
 
         addRes(target, src) {
@@ -156,12 +162,13 @@
             if (!res.wood && !res.stone && !res.iron) {
                 const txt = $cell.text().replace(/\s+/g, ' ').trim();
                 const nums = txt.match(/\d[\d.\s]*/g) || [];
+
                 if (nums.length === 1) {
                     const value = this.parseNumber(nums[0]);
                     const html = $cell.html() || '';
 
-                    if (/header wood|class="wood"|holz/i.test(html)) res.wood = value;
-                    if (/header stone|class="stone"|lehm|argila/i.test(html)) res.stone = value;
+                    if (/header wood|class="wood"|holz|madeira/i.test(html)) res.wood = value;
+                    if (/header stone|class="stone"|lehm|argila|barro/i.test(html)) res.stone = value;
                     if (/header iron|class="iron"|eisen|ferro/i.test(html)) res.iron = value;
                 } else if (nums.length >= 3) {
                     res.wood = this.parseNumber(nums[0]);
@@ -177,21 +184,26 @@
             const dom = $.parseHTML(html);
             const $table = $(dom).find('#trades_table');
             const total = { wood: 0, stone: 0, iron: 0 };
+            const myName = String(game_data.player.name || '').trim().toLowerCase();
 
             $table.find('tbody > tr').each((_, tr) => {
                 const $tr = $(tr);
                 const $tds = $tr.find('td');
-                if ($tds.length < 9) return;
-
-                const arrowImg = $tds.eq(1).find('img').attr('src') || '';
-                const isOutgoing = /outgoing\.webp/i.test(arrowImg);
-                if (!isOutgoing) return;
+                if ($tds.length < 7) return;
 
                 const $resCell = $tds.last();
-                if ($resCell.hasClass('hidden')) return;
+                if (!$resCell.length || $resCell.hasClass('hidden')) return;
+
+                const sender = $tds.eq(2).text().replace(/\s+/g, ' ').trim().toLowerCase();
+                if (sender !== myName) return;
+
+                const arrowImg = $tds.eq(1).find('img').attr('src') || '';
+                if (arrowImg && !/outgoing\.webp/i.test(arrowImg)) return;
 
                 const res = this.extractResourcesByIcons($resCell);
-                this.addRes(total, res);
+                if (res.wood || res.stone || res.iron) {
+                    this.addRes(total, res);
+                }
             });
 
             return total;
@@ -201,14 +213,18 @@
             const dom = $.parseHTML(html);
             const $table = $(dom).find('#trades_table');
             const total = { wood: 0, stone: 0, iron: 0 };
+            const myName = String(game_data.player.name || '').trim().toLowerCase();
 
             $table.find('tbody > tr').each((_, tr) => {
                 const $tr = $(tr);
                 const $tds = $tr.find('td');
-                if ($tds.length < 9) return;
+                if ($tds.length < 7) return;
 
                 const $resCell = $tds.last();
-                if ($resCell.hasClass('hidden')) return;
+                if (!$resCell.length || $resCell.hasClass('hidden')) return;
+
+                const sender = $tds.eq(2).text().replace(/\s+/g, ' ').trim().toLowerCase();
+                if (sender === myName) return;
 
                 const res = this.extractResourcesByIcons($resCell);
                 if (res.wood || res.stone || res.iron) {
@@ -235,6 +251,10 @@
                 text.match(/Moedas de ouro\s*Total:\s*(\d+)/i) ||
                 text.match(/Total:\s*(\d+)/i);
 
+            const currentLimitMatch =
+                text.match(/Limite de nobres atual:\s*(\d+)/i) ||
+                text.match(/Limite de nobres:\s*(\d+)/i);
+
             const missingMatch =
                 text.match(/ainda faltam:\s*(\d+)\s*moedas de ouro/i) ||
                 text.match(/faltam:\s*(\d+)\s*moedas de ouro/i);
@@ -244,12 +264,21 @@
                 text.match(/Já poupado.*?:\s*(\d+)\s*moedas de ouro/i);
 
             this.academy.totalMinted = totalMatch ? parseInt(totalMatch[1], 10) : 0;
-            this.academy.missingCoins = missingMatch ? parseInt(missingMatch[1], 10) : 25;
-            this.academy.savedCoins = savedMatch ? parseInt(savedMatch[1], 10) : Math.max(0, 25 - this.academy.missingCoins);
+            this.academy.currentLimit = currentLimitMatch ? parseInt(currentLimitMatch[1], 10) : 0;
 
-            if (this.academy.savedCoins < 0 || this.academy.savedCoins > 24) {
-                this.academy.savedCoins = Math.max(0, 25 - this.academy.missingCoins);
+            const savedFromTri = Math.max(0, this.academy.totalMinted - this.tri(this.academy.currentLimit));
+            const savedFromText = savedMatch ? parseInt(savedMatch[1], 10) : savedFromTri;
+
+            this.academy.savedCoins = savedFromText;
+            this.academy.missingCoins = missingMatch
+                ? parseInt(missingMatch[1], 10)
+                : Math.max(0, (this.academy.currentLimit + 1) - this.academy.savedCoins);
+
+            if (this.academy.savedCoins > (this.academy.currentLimit + 1)) {
+                this.academy.savedCoins = savedFromTri;
             }
+
+            this.academy.missingCoins = Math.max(0, (this.academy.currentLimit + 1) - this.academy.savedCoins);
         }
 
         getCurrentGroupName() {
@@ -285,13 +314,20 @@
         getSavedCoins() {
             const raw = $('#nc_saved').val();
             const val = this.parseNumber(raw);
-            return Math.max(0, Math.min(24, val));
+            return Math.max(0, val);
         }
 
         getMintedCoins() {
             const raw = $('#nc_minted').val();
             const val = this.parseNumber(raw);
             return Math.max(0, val);
+        }
+
+        getCurrentLimit() {
+            const totalMinted = this.getMintedCoins();
+            let n = 0;
+            while (this.tri(n + 1) <= totalMinted) n++;
+            return n;
         }
 
         includeIncoming() {
@@ -315,13 +351,14 @@
             ));
         }
 
-        calcMaxNoblesFromResources(res, savedCoins, coinCost) {
+        calcMaxNoblesFromResources(res, currentLimit, savedCoins, coinCost) {
             let nobles = 0;
             let current = { ...res };
+            let nextTarget = currentLimit + 1;
             let saved = savedCoins;
 
             while (true) {
-                const missingCoins = Math.max(0, 25 - saved);
+                const missingCoins = Math.max(0, nextTarget - saved);
 
                 const cost = {
                     wood: this.snobCost.wood + (coinCost.wood * missingCoins),
@@ -337,7 +374,9 @@
                     current.wood -= cost.wood;
                     current.stone -= cost.stone;
                     current.iron -= cost.iron;
+
                     nobles++;
+                    nextTarget++;
                     saved = 0;
                 } else {
                     break;
@@ -356,13 +395,14 @@
             const totalWithIncoming = this.sumRes(villages, ownTransit, externalIncoming);
             const usableTotal = this.includeIncoming() ? totalWithIncoming : totalOwn;
 
-            const savedCoins = this.getSavedCoins();
             const mintedCoins = this.getMintedCoins();
+            const currentLimit = this.getCurrentLimit();
+            const savedCoins = this.getSavedCoins();
             const coinCost = this.getDiscountedCoinCost();
-            const missingCoins = Math.max(0, 25 - savedCoins);
+            const missingCoins = Math.max(0, (currentLimit + 1) - savedCoins);
 
             const coinsPossible = this.calcCoinsFromResources(usableTotal, coinCost);
-            const max = this.calcMaxNoblesFromResources(usableTotal, savedCoins, coinCost);
+            const max = this.calcMaxNoblesFromResources(usableTotal, currentLimit, savedCoins, coinCost);
 
             return {
                 villages,
@@ -371,8 +411,9 @@
                 totalOwn,
                 totalWithIncoming,
                 usableTotal,
-                savedCoins,
                 mintedCoins,
+                currentLimit,
+                savedCoins,
                 coinCost,
                 missingCoins,
                 coinsPossible,
@@ -837,6 +878,7 @@
             return [
                 '[b]Calculadora de Nobres[/b]',
                 `Moedas já cunhadas: ${this.format(c.mintedCoins)}`,
+                `Limite atual de nobres: ${this.format(c.currentLimit)}`,
                 `Moedas poupadas p/ próximo: ${this.format(c.savedCoins)}`,
                 `Desconto moeda: ${this.getMintDiscount()}%`,
                 `Moedas possíveis: ${this.format(c.coinsPossible)}`,
